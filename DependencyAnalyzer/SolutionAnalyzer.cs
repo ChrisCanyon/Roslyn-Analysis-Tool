@@ -7,40 +7,46 @@ namespace DependencyAnalyzer
 {
     public static class SolutionAnalyzer
     {
-        public static async Task<List<INamedTypeSymbol>> GetAllClassesInSolutionAsync(string solutionPath)
+        public static async Task<List<INamedTypeSymbol>> GetAllTypesInSolutionAsync(string solutionPath)
         {
             MSBuildLocator.RegisterDefaults();
-            var classSymbols = new List<INamedTypeSymbol>();
+            var allSymbols = new List<INamedTypeSymbol>();
 
             using var workspace = MSBuildWorkspace.Create();
             var solution = await workspace.OpenSolutionAsync(solutionPath);
 
             foreach (var project in solution.Projects)
             {
+                var compilation = await project.GetCompilationAsync();
+                if (compilation == null)
+                    continue;
+
                 foreach (var document in project.Documents)
                 {
                     var syntaxTree = await document.GetSyntaxTreeAsync();
-                    if (syntaxTree == null) continue;
+                    if (syntaxTree == null)
+                        continue;
 
                     var root = await syntaxTree.GetRootAsync();
-                    var semanticModel = await document.GetSemanticModelAsync();
-                    if (semanticModel == null) continue;
+                    var semanticModel = compilation.GetSemanticModel(syntaxTree);
+                    if (semanticModel == null)
+                        continue;
 
-                    var classDeclarations = root.DescendantNodes()
-                        .OfType<ClassDeclarationSyntax>();
+                    var typeDeclarations = root.DescendantNodes()
+                        .Where(n => n is ClassDeclarationSyntax || n is InterfaceDeclarationSyntax);
 
-                    foreach (var classDecl in classDeclarations)
+                    foreach (var decl in typeDeclarations)
                     {
-                        var symbol = semanticModel.GetDeclaredSymbol(classDecl) as INamedTypeSymbol;
+                        var symbol = semanticModel.GetDeclaredSymbol(decl) as INamedTypeSymbol;
                         if (symbol != null)
                         {
-                            classSymbols.Add(symbol);
+                            allSymbols.Add(symbol);
                         }
                     }
                 }
             }
 
-            return classSymbols;
+            return allSymbols;
         }
     }
 }

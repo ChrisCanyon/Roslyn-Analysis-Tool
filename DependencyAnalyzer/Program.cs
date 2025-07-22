@@ -1,20 +1,38 @@
 ﻿using DependencyAnalyzer;
 
-var classes = await SolutionAnalyzer.GetAllClassesInSolutionAsync("C:\\Path\\To\\Solution\\SolutionName.sln");
+var types = await SolutionAnalyzer.GetAllTypesInSolutionAsync("C:\\TylerDev\\onlineservices\\Source\\InSite.sln");
 
+// 2. Build dependency map
+var dependencyMap = DependencyAnalyzer.DependencyAnalyzer.GetClassDependencies(types);
 
-var emailHelper = classes.Where(x => x.Name == "EmailHelper");
+// 3. Build full graph
+var graph = DependencyAnalyzer.DependencyAnalyzer.BuildFullDependencyGraph(dependencyMap, types);
 
-var emailHelperDependencies = DependencyAnalyzer.DependencyAnalyzer.AnalyzeDependencies(emailHelper);
+// 4. Find a root class you're interested in (by class name, namespace, etc.)
+var rootNode = graph.Values.FirstOrDefault(n => n.ClassName == "Emails.InSite.Helpers.AutoPayEmailHelper");
 
-foreach (var classAndDependency in emailHelperDependencies)
+if (rootNode is not null)
 {
-    Console.WriteLine($"Dependencies for {classAndDependency.Class.Name}");
-    foreach (var dependency in classAndDependency.DependsOn)
-    {
-        Console.WriteLine($"\tDependencies for {dependency.Name}");
-    }
+    // 5. Print the dependency tree
+    File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\dependency-output.txt", rootNode.PrintDependencyTree());
+    File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\usedBy-output.txt", rootNode.PrintConsumerTree());
 }
+else
+{
+    Console.WriteLine("Target class not found.");
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
