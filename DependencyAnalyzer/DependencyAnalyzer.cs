@@ -32,7 +32,7 @@ namespace DependencyAnalyzer
         }
         private void PrintDependenciesRecursive(DependencyNode node, string prefix, bool isLast, Stack<INamedTypeSymbol> path, StringBuilder sb)
         {
-            var marker = isLast ? "└─ " : "├─ ";
+            string marker = prefix == "" ? "" : (isLast ? "└─ " : "├─ ");
             var cycle = path.Contains(node.Class, SymbolEqualityComparer.Default) ? " ↩ (cycle)" : "";
             sb.AppendLine($"{prefix}{marker}{node.ClassName}{cycle}");
 
@@ -41,7 +41,7 @@ namespace DependencyAnalyzer
 
             path.Push(node.Class);
 
-            var deps = node.DependsOn.OrderBy(d => d.ClassName).ToList();
+            var deps = node.DependsOn.ToList();
             for (int i = 0; i < deps.Count; i++)
             {
                 var isLastChild = (i == deps.Count - 1);
@@ -62,7 +62,7 @@ namespace DependencyAnalyzer
 
         private void PrintDependedOnByRecursive(DependencyNode node, string prefix, bool isLast, Stack<INamedTypeSymbol> path, StringBuilder sb)
         {
-            var marker = isLast ? "└─ " : "├─ ";
+            string marker = prefix == "" ? "" : (isLast ? "╘═ " : "╞═ ");
             var cycle = path.Contains(node.Class, SymbolEqualityComparer.Default) ? " ↩ (cycle)" : "";
             sb.AppendLine($"{prefix}{marker}{node.ClassName}{cycle}");
 
@@ -71,7 +71,7 @@ namespace DependencyAnalyzer
 
             path.Push(node.Class);
 
-            var dependents = node.DependedOnBy.OrderBy(d => d.ClassName).ToList();
+            var dependents = node.DependedOnBy.ToList();
             for (int i = 0; i < dependents.Count; i++)
             {
                 var isLastChild = (i == dependents.Count - 1);
