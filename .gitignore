@@ -1,0 +1,65 @@
+## Build results
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+*.cache
+*.log
+
+## VS Code settings
+.vscode/
+
+## Visual Studio settings
+*.csproj.user
+*.sln.docstates
+*.vs/
+
+## DotCover / Coverage
+*.coverage
+*.coveragexml
+*.dotCover
+
+## Rider
+.idea/
+*.sln.iml
+
+## Global.json SDK resolver cache
+global.json.sdg.json
+
+## Roslyn analyzer artifacts
+GeneratedCode/
+*.g.cs
+*.g.i.cs
+
+## Temporary files
+*.tmp
+*.bak
+*.ncb
+*.log
+*.DS_Store
+Thumbs.db
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.assets.json
+
+## MSBuild logs
+msbuild.log
+msbuild.binlog
+
+## Git-specific
+*.orig
+*.rej
+*.patch
+*.diff
+
+## Dotnet Tools
+.dotnet/
+
+## Resharper
+_ReSharper*/
