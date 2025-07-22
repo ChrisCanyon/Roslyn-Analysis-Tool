@@ -1,92 +1,13 @@
 ﻿using Microsoft.CodeAnalysis;
-using System.Text;
-using System.Text.Json.Serialization;
 
 namespace DependencyAnalyzer
 {
-
-    public class DependencyNode
-    {
-        [JsonIgnore]
-        public required INamedTypeSymbol Class { get; set; }
-
-        // For serialization / external analysis
-        public required string ProjectName { get; set; }
-        public required string ClassName { get; set; } 
-
-        public string? Lifetime { get; set; } // e.g. "Singleton", "Scoped", "Transient", or null
-
-        public List<DependencyNode> DependsOn { get; set; } = [];
-        public List<DependencyNode> DependedOnBy { get; set; } = [];
-        public List<DependencyNode> Implements { get; set; } = [];
-        public List<DependencyNode> ImplementedBy { get; set; } = [];
-
-        public bool IsInterface => Class.TypeKind == TypeKind.Interface;
-
-        public string PrintDependencyTree()
-        {
-            var sb = new StringBuilder();
-            var currentPath = new Stack<INamedTypeSymbol>();
-            PrintDependenciesRecursive(this, "", true, currentPath, sb);
-            return sb.ToString();
-        }
-        private void PrintDependenciesRecursive(DependencyNode node, string prefix, bool isLast, Stack<INamedTypeSymbol> path, StringBuilder sb)
-        {
-            string marker = prefix == "" ? "" : (isLast ? "└─ " : "├─ ");
-            var cycle = path.Contains(node.Class, SymbolEqualityComparer.Default) ? " ↩ (cycle)" : "";
-            sb.AppendLine($"{prefix}{marker}{node.ClassName}{cycle}");
-
-            if (!string.IsNullOrEmpty(cycle))
-                return;
-
-            path.Push(node.Class);
-
-            var deps = node.DependsOn.ToList();
-            for (int i = 0; i < deps.Count; i++)
-            {
-                var isLastChild = (i == deps.Count - 1);
-                var childPrefix = prefix + (isLast ? "   " : "│  ");
-                PrintDependenciesRecursive(deps[i], childPrefix, isLastChild, path, sb);
-            }
-
-            path.Pop();
-        }
-
-        public string PrintConsumerTree()
-        {
-            var sb = new StringBuilder();
-            var currentPath = new Stack<INamedTypeSymbol>();
-            PrintDependedOnByRecursive(this, "", true, currentPath, sb);
-            return sb.ToString();
-        }
-
-        private void PrintDependedOnByRecursive(DependencyNode node, string prefix, bool isLast, Stack<INamedTypeSymbol> path, StringBuilder sb)
-        {
-            string marker = prefix == "" ? "" : (isLast ? "╘═ " : "╞═ ");
-            var cycle = path.Contains(node.Class, SymbolEqualityComparer.Default) ? " ↩ (cycle)" : "";
-            sb.AppendLine($"{prefix}{marker}{node.ClassName}{cycle}");
-
-            if (!string.IsNullOrEmpty(cycle))
-                return;
-
-            path.Push(node.Class);
-
-            var dependents = node.DependedOnBy.ToList();
-            for (int i = 0; i < dependents.Count; i++)
-            {
-                var isLastChild = (i == dependents.Count - 1);
-                var childPrefix = prefix + (isLast ? "   " : "│  ");
-                PrintDependedOnByRecursive(dependents[i], childPrefix, isLastChild, path, sb);
-            }
-
-            path.Pop();
-        }
-    }
-
     public class DependencyAnalyzer
     {
-        public static Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> GetClassDependencies(IEnumerable<INamedTypeSymbol> classSymbols)
+        public static Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> GetClassDependencies(SolutionAnalyzer solutionAnalyzer)
         {
+            var classSymbols = solutionAnalyzer.AllTypes;
+
             var comparer = SymbolEqualityComparer.Default;
             var dependencyMap = new Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>>(comparer);
 
@@ -114,9 +35,11 @@ namespace DependencyAnalyzer
 
         public static Dictionary<INamedTypeSymbol, DependencyNode> BuildFullDependencyGraph(
             Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> dependencyMap,
-            IEnumerable<INamedTypeSymbol> allSymbols)
+            SolutionAnalyzer solutionAnalyzer)
         {
-            var nodeMap = CreateBaseNodes(allSymbols);
+            var allSymbols = solutionAnalyzer.AllTypes;
+
+            var nodeMap = CreateBaseNodes(allSymbols, solutionAnalyzer);
 
             WireDependencies(dependencyMap, nodeMap);
 
@@ -133,28 +56,7 @@ namespace DependencyAnalyzer
             ExpandInterfaceUpstreamEdges(nodeMap);
         }
 
-        public class FullyQualifiedNameComparer : IEqualityComparer<INamedTypeSymbol>
-        {
-            public bool Equals(INamedTypeSymbol? x, INamedTypeSymbol? y)
-            {
-                if (x is null || y is null)
-                    return false;
-
-                return GetKey(x) == GetKey(y);
-            }
-
-            public int GetHashCode(INamedTypeSymbol obj)
-            {
-                return GetKey(obj).GetHashCode();
-            }
-
-            private string GetKey(INamedTypeSymbol symbol)
-            {
-                return symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            }
-        }
-
-        private static Dictionary<INamedTypeSymbol, DependencyNode> CreateBaseNodes(IEnumerable<INamedTypeSymbol> allSymbols)
+        private static Dictionary<INamedTypeSymbol, DependencyNode> CreateBaseNodes(IEnumerable<INamedTypeSymbol> allSymbols, SolutionAnalyzer solutionAnalyzer)
         {
             var comparer = new FullyQualifiedNameComparer();
             var nodeMap = new Dictionary<INamedTypeSymbol, DependencyNode>(comparer);
@@ -166,25 +68,13 @@ namespace DependencyAnalyzer
                     Class = symbol,
                     ClassName = symbol.ToDisplayString(),                   // Fully qualified type name
                     ProjectName = symbol.ContainingAssembly.Name,           // Approximate project name
-                    Lifetime = GetLifetimeFromNameOrAttributes(symbol)      // Placeholder for now
+                    RegistrationInfo = solutionAnalyzer.GetRegistrationsForSymbol(symbol)      // Placeholder for now
                 };
 
                 nodeMap[symbol] = node;
             }
 
             return nodeMap;
-        }
-
-        //TODO actually look at registration
-        private static string? GetLifetimeFromNameOrAttributes(INamedTypeSymbol symbol)
-        {
-            var name = symbol.Name.ToLowerInvariant();
-
-            if (name.Contains("singleton")) return "Singleton";
-            if (name.Contains("scoped")) return "Scoped";
-            if (name.Contains("transient")) return "Transient";
-
-            return null;
         }
 
         private static void WireDependencies(
