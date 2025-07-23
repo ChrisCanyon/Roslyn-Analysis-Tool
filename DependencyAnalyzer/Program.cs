@@ -42,14 +42,49 @@ var dependencyMap = DependencyAnalyzer.DependencyAnalyzer.GetClassDependencies(s
 var graph = DependencyAnalyzer.DependencyAnalyzer.BuildFullDependencyGraph(dependencyMap, solutionAnalyzer);
 
 
+//Check for self references
+
+var comparer = new FullyQualifiedNameComparer();
+
+//Check for unregistered dependencies
+foreach(var node in graph.Values)
+{
+    foreach (var registration in node.RegistrationInfo)
+    {
+        foreach(var dependency in node.DependsOn)
+        {
+            if (!dependency.RegistrationInfo.ContainsKey(registration.Key))
+            {
+                //if the depedency is an implementation
+                if(node.Implements.Any(x => comparer.Equals(dependency.Class, x.Class))){
+                    Console.WriteLine($"~~~ Circular Dependency ~~~");
+                    Console.WriteLine($"Class: {node.ClassName}");
+                    Console.WriteLine($"Relies on: {dependency.ClassName}");
+                    Console.WriteLine($"For project {registration.Key}");
+                    Console.WriteLine($"~~~ END ~~~");
+                }
+                Console.WriteLine($"~~~ Dependency Unregistered Error ~~~");
+                Console.WriteLine($"Class: {node.ClassName}");
+                Console.WriteLine($"Relies on: {dependency.ClassName}");
+                Console.WriteLine($"For project {registration.Key}");
+                Console.WriteLine($"but {dependency.ClassName} was not registered in that project");
+                Console.WriteLine($"~~~ END ~~~");
+            }
+        }
+    }
+}
+
+
+
+
+
 stopwatch.Stop(); // Stop the timer
 Console.WriteLine($"~~~ TIMER ~~~");
 Console.WriteLine($"Elapsed time: {stopwatch.ElapsedMilliseconds} ms");
 Console.WriteLine($"~~~ TIMER ~~~");
 
-Console.WriteLine("standard install registration");
-var node = graph.Values.FirstOrDefault(n => n.ClassName == "Infrastructure.InSite.LinqToSql.ECommerce.BillRepository");
-Console.WriteLine(node.PrintRegistrations());
+var n = graph.Values.FirstOrDefault(n => n.ClassName == "Infrastructure.InSite.LinqToSql.ECommerce.BillRepository");
+Console.WriteLine(n.PrintRegistrations());
 
-File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\dependency-output.txt", node.PrintDependencyTree());
-File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\usedBy-output.txt", node.PrintConsumerTree());
+File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\dependency-output.txt", n.PrintDependencyTree());
+File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\usedBy-output.txt", n.PrintConsumerTree());
