@@ -72,6 +72,7 @@ namespace DependencyAnalyzer
 
             foreach(var project in solution.Projects)
             {
+                if (project.Name.ToLower().Contains("test")) continue;
                 var projectRegistrations = await GetRegistrationsFromProjectAsync(project);
                 ret.AddRange(projectRegistrations);
             }
@@ -86,72 +87,204 @@ namespace DependencyAnalyzer
             foreach (var doc in project.Documents)
             {
                 var root = await doc.GetSyntaxRootAsync();
+
+                // Get the semantic model for the current document (lets us resolve symbols)
                 var model = await doc.GetSemanticModelAsync();
+
                 if (root == null || model == null) continue;
 
-                var invocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>();
+                // Find all method invocation expressions in this file (e.g., container.Register(...))
+                var invocations = root.DescendantNodes()
+                    .OfType<InvocationExpressionSyntax>()
+                    .Where(inv =>
+                        inv.Expression is MemberAccessExpressionSyntax memberAccess &&
+                        memberAccess.Name.Identifier.Text == "Register" &&
+                        inv.ToString().Contains("Component.For"))
+                    .ToList();
 
                 foreach (var invocation in invocations)
                 {
-                    // Look for: container.Register(Component.For<...>().ImplementedBy<...>().LifestyleX())
-                    if (!invocation.ToString().Contains("Component.For")) continue;
-
+                    // Try to parse this invocation into a structured RegistrationInfo object
                     var registration = ParseRegistration(invocation, model, project.Name);
-                    if (registration != null)
-                        registrations.Add(registration);
+
+                    registrations.AddRange(registration);
                 }
             }
 
+            // Return all registrations found in this project
             return registrations;
         }
 
-        private static RegistrationInfo? ParseRegistration(InvocationExpressionSyntax invocation, SemanticModel model, string projectName)
+        private static RegistrationInfo GetRegistrationForFactoryMethod(INamedTypeSymbol registeredSymbol, InvocationExpressionSyntax invocation, string projectName)
         {
-            // Look for the `Component.For<T>().ImplementedBy<U>().LifestyleX()` chain
+            var regType = ExtractLifestyle(invocation);
+
+            if(registeredSymbol.TypeKind == TypeKind.Interface)
+            {
+                return new RegistrationInfo
+                {
+                    Interface = registeredSymbol,
+                    Implementation = null,
+                    RegistrationType = regType,
+                    ProjectName = projectName
+                };
+            }
+            else
+            {
+                return new RegistrationInfo
+                {
+                    Interface = null,
+                    Implementation = registeredSymbol,
+                    RegistrationType = regType,
+                    ProjectName = projectName
+                };
+            }
+        }
+
+        private static RegistrationInfo GetRegistrationForImplementationOnly(INamedTypeSymbol registeredClass, InvocationExpressionSyntax invocation, string projectName)
+        {
+            if (registeredClass.TypeKind == TypeKind.Interface)
+            {
+                Console.WriteLine("GetRegistrationForImplementationOnly passed an interface");
+                Console.WriteLine($"~~~ START FULL CALL ~~~~");
+                Console.WriteLine($"{invocation.ToFullString()}");
+                Console.WriteLine($"~~~ END FULL CALL ~~~~");
+            }
+
+            var regType = ExtractLifestyle(invocation);
+
+            return new RegistrationInfo
+            {
+                Interface = null,
+                Implementation = registeredClass,
+                RegistrationType = regType,
+                ProjectName = projectName
+            };
+        }
+
+        private static RegistrationInfo GetRegistrationForImplementationAndInterface(INamedTypeSymbol registeredInterface, INamedTypeSymbol registeredImplementation, InvocationExpressionSyntax invocation, string projectName)
+        {
+            var regType = ExtractLifestyle(invocation);
+
+
+            if (registeredImplementation.TypeKind == TypeKind.Interface)
+            {
+                Console.WriteLine("GetRegistrationForImplementationAndInterface passed an interface as implementation");
+                Console.WriteLine($"~~~ START FULL CALL ~~~~");
+                Console.WriteLine($"{invocation.ToFullString()}");
+                Console.WriteLine($"~~~ END FULL CALL ~~~~");
+            }
+
+            if (registeredInterface.TypeKind == TypeKind.Class)
+            {
+                Console.WriteLine("GetRegistrationForImplementationAndInterface passed a class as interface");
+                Console.WriteLine($"~~~ START FULL CALL ~~~~");
+                Console.WriteLine($"{invocation.ToFullString()}");
+                Console.WriteLine($"~~~ END FULL CALL ~~~~");
+            }
+
+
+            return new RegistrationInfo
+            {
+                Interface = registeredInterface,
+                Implementation = registeredImplementation,
+                RegistrationType = regType,
+                ProjectName = projectName
+            };
+        }
+
+        private static List<RegistrationInfo> ParseRegistration(InvocationExpressionSyntax invocation, SemanticModel model, string projectName)
+        {
             if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
             {
-                var fullCall = memberAccess.ToString();
-
+                var fullCall = invocation.ToFullString();
                 // Try to resolve the type arguments in For<>() and ImplementedBy<>()
-                var genericNodes = invocation.DescendantNodes().OfType<TypeOfExpressionSyntax>().ToList();
                 var genericTypes = invocation.DescendantNodes().OfType<GenericNameSyntax>();
 
-                var allTypes = genericTypes.SelectMany(g =>
+                var registeredSymbols = genericTypes.SelectMany(g =>
                     g.TypeArgumentList.Arguments.Select(arg => model.GetSymbolInfo(arg).Symbol as INamedTypeSymbol))
                     .Where(s => s != null)
                     .Cast<INamedTypeSymbol>()
                     .ToList();
 
-                if (allTypes.Count >= 2)
+                if (registeredSymbols.Count == 0)
                 {
-                    var interfaceType = allTypes[0];
-                    var implementationType = allTypes[1];
+                    Console.WriteLine($"Unable to find any symbols");
+                    Console.WriteLine($"~~~ START FULL CALL ~~~~");
+                    Console.WriteLine($"{invocation.ToFullString()}");
+                    Console.WriteLine($"~~~ END FULL CALL ~~~~");
+                    return new List<RegistrationInfo>();
+                }
 
-                    var regType = LifetimeTypes.Singleton;
-                    if (fullCall.Contains("LifestyleTransient")) regType = LifetimeTypes.Transient;
-                    else if (fullCall.Contains("LifestylePerWebRequest")) regType = LifetimeTypes.PerWebRequest;
+                if (fullCall.Contains("UsingFactoryMethod"))
+                {
+                    return new List<RegistrationInfo>() { GetRegistrationForFactoryMethod(registeredSymbols.First(), invocation, projectName) };
+                }
 
-                    return new RegistrationInfo
+                if (registeredSymbols.Count == 1)
+                {
+                    return new List<RegistrationInfo>() { GetRegistrationForImplementationOnly(registeredSymbols.First(), invocation, projectName) };
+                }
+                else if (registeredSymbols.Count > 2)
+                {
+                   
+                    var componentForCall = invocation
+                        .DescendantNodes()
+                        .OfType<GenericNameSyntax>()
+                        .FirstOrDefault(g =>
+                            g.Identifier.Text == "For" &&
+                            g.TypeArgumentList.Arguments.Count > 1);
+
+                    if (componentForCall != null)
                     {
-                        Interface = interfaceType,
-                        Implementation = implementationType,
-                        RegistrationType = regType,
-                        ProjectName = projectName
-                    };
+                        var ret = new List<RegistrationInfo>
+                        {
+                            GetRegistrationForImplementationAndInterface(registeredSymbols[0], registeredSymbols[2], invocation, projectName),
+                            GetRegistrationForImplementationAndInterface(registeredSymbols[1], registeredSymbols[2], invocation, projectName)
+                        };
+                        return ret;
+                    }
+                }
+                else
+                {
+                    return new List<RegistrationInfo>() { GetRegistrationForImplementationAndInterface(registeredSymbols[0], registeredSymbols[1], invocation, projectName) };
                 }
             }
 
-            return null;
+            Console.WriteLine($"Couldnt map call at all");
+            Console.WriteLine($"~~~ START FULL CALL ~~~~");
+            Console.WriteLine($"{invocation.ToFullString()}");
+            Console.WriteLine($"~~~ END FULL CALL ~~~~");
+
+            return new List<RegistrationInfo>();
         }
-    
+
+        private static LifetimeTypes ExtractLifestyle(InvocationExpressionSyntax invocation)
+        {
+            var fullCall = invocation.ToFullString();
+
+            if (fullCall.Contains("LifestyleTransient"))
+                return LifetimeTypes.Transient;
+            if (fullCall.Contains("LifestylePerWebRequest") || fullCall.Contains("LifestyleScoped"))
+                return LifetimeTypes.PerWebRequest;
+            if (fullCall.Contains("LifestyleSingleton"))
+                return LifetimeTypes.Singleton;
+            
+            return LifetimeTypes.Singleton; // Default for Castle Windsor
+        }
+
         public Dictionary<string, RegistrationInfo> GetRegistrationsForSymbol(INamedTypeSymbol symbol)
         {
             var ret = new Dictionary<string, RegistrationInfo>();
             var comparer = new FullyQualifiedNameComparer();
 
-            foreach(var registration in RegistrationInfos.Where(x => comparer.Equals(x.Implementation, symbol)))
+            var relatedRegistrations = RegistrationInfos.Where(x =>
+                                            comparer.Equals(x.Implementation, symbol) ||
+                                            symbol.Interfaces.Any(y => comparer.Equals(x.Interface, y)));
+
+            foreach (var registration in relatedRegistrations)
             {
-                ret.Add(registration.ProjectName, registration);
+                ret.TryAdd(registration.ProjectName, registration);
             }
 
             return ret;

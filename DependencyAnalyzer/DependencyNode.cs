@@ -13,10 +13,19 @@ namespace DependencyAnalyzer
 
     public class RegistrationInfo
     {
-        public INamedTypeSymbol Implementation { get; set; } //ignore for now just focus on registrationtype
-        public INamedTypeSymbol Interface { get; set; } //ignore for now just focus on registrationtype
+        public INamedTypeSymbol? Implementation { get; set; } 
+        public INamedTypeSymbol? Interface { get; set; }
         public required string ProjectName { get; set; }
         public LifetimeTypes RegistrationType { get; set; }
+
+        public string Print()
+        {
+            var interfaceName = Interface?.ToDisplayString() ?? "(none)";
+            return
+                $"- Project: {ProjectName}\n" +
+                $"  Interface: {interfaceName}\n" +
+                $"  Lifetime: {RegistrationType}";
+        }
     }
 
     public class DependencyNode
@@ -94,6 +103,26 @@ namespace DependencyAnalyzer
             }
 
             path.Pop();
+        }
+
+        public string PrintRegistrations()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Class: {ClassName}");
+            sb.AppendLine();
+            sb.AppendLine("Registrations:");
+
+            if (RegistrationInfo.Count == 0)
+            {
+                sb.AppendLine("  (none)");
+                return sb.ToString();
+            }
+
+            foreach (var (project, registartion) in RegistrationInfo)
+            {
+                sb.AppendLine(registartion.Print());
+            }
+            return sb.ToString();
         }
     }
 }
