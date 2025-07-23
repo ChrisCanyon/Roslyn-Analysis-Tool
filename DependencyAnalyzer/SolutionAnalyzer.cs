@@ -16,9 +16,33 @@ namespace DependencyAnalyzer
             MSBuildLocator.RegisterDefaults();
             using var workspace = MSBuildWorkspace.Create();
             var s = await workspace.OpenSolutionAsync(solutionPath);
-            var allTypes = await GetAllTypesInSolutionAsync(s);
-            var registrationInfos = await GetSolutionRegistrations(s);
+
+            var taskList = new List<Task>();
+            taskList.Add(GetAllTypesInSolutionAsync(s));
+            taskList.Add(GetSolutionRegistrations(s));
+
+            Task.WaitAll(taskList.ToArray());
+
+            var allTypes = (taskList[0] as Task<List<INamedTypeSymbol>>).Result;
+            var registrationInfos = (taskList[1] as Task<List<RegistrationInfo>>).Result; 
             return new SolutionAnalyzer(s, allTypes, registrationInfos);
+        }
+
+        public Dictionary<string, RegistrationInfo> GetRegistrationsForSymbol(INamedTypeSymbol symbol)
+        {
+            var ret = new Dictionary<string, RegistrationInfo>();
+            var comparer = new FullyQualifiedNameComparer();
+
+            var relatedRegistrations = RegistrationInfos.Where(x =>
+                                            comparer.Equals(x.Implementation, symbol) ||
+                                            symbol.Interfaces.Any(y => comparer.Equals(x.Interface, y)));
+
+            foreach (var registration in relatedRegistrations)
+            {
+                ret.TryAdd(registration.ProjectName, registration);
+            }
+
+            return ret;
         }
 
         private SolutionAnalyzer(Solution solution, List<INamedTypeSymbol> allTypes, List<RegistrationInfo> registrationInfos)
@@ -70,17 +94,27 @@ namespace DependencyAnalyzer
         {
             var ret = new List<RegistrationInfo>();
 
-            foreach(var project in solution.Projects)
+            var registrationTasks = new List<Task<List<RegistrationInfo>>>();
+
+            foreach (var project in solution.Projects)
             {
                 if (project.Name.ToLower().Contains("test")) continue;
-                var projectRegistrations = await GetRegistrationsFromProjectAsync(project);
+
+                registrationTasks.Add(GetRegistrationsFromProjectAsync(project, solution));
+            }
+
+            Task.WaitAll(registrationTasks.ToArray());
+
+            foreach(var task in registrationTasks)
+            {
+                var projectRegistrations = task.Result;
                 ret.AddRange(projectRegistrations);
             }
 
             return ret;
         }
 
-        private static async Task<List<RegistrationInfo>> GetRegistrationsFromProjectAsync(Project project)
+        private static async Task<List<RegistrationInfo>> GetRegistrationsFromProjectAsync(Project project, Solution solution)
         {
             var registrations = new List<RegistrationInfo>();
 
@@ -102,10 +136,28 @@ namespace DependencyAnalyzer
                         inv.ToString().Contains("Component.For"))
                     .ToList();
 
+                INamedTypeSymbol? currentInstallerSymbol = FindInstallerInDocument(model, root);
+                List<string> calledProjects = [];
+                if (currentInstallerSymbol != null) calledProjects = await GetInstallerReferencesAsync(solution, currentInstallerSymbol);
+
                 foreach (var invocation in invocations)
                 {
                     // Try to parse this invocation into a structured RegistrationInfo object
                     var registration = ParseRegistration(invocation, model, project.Name);
+
+                    //Clean up installer junk
+                    if(currentInstallerSymbol != null)
+                    {
+                        registration = registration.SelectMany(incompleteRegistration =>
+                                                        calledProjects.Select(project =>
+                                                        new RegistrationInfo
+                                                        {
+                                                            Interface = incompleteRegistration.Interface,
+                                                            Implementation = incompleteRegistration.Implementation,
+                                                            RegistrationType = incompleteRegistration.RegistrationType,
+                                                            ProjectName = project
+                                                        })).ToList();
+                    }
 
                     registrations.AddRange(registration);
                 }
@@ -113,6 +165,59 @@ namespace DependencyAnalyzer
 
             // Return all registrations found in this project
             return registrations;
+        }
+
+        private static async Task<List<string>> GetInstallerReferencesAsync(Solution solution, INamedTypeSymbol installerSymbol)
+        {
+            var result = new List<string>();
+            var installerName = installerSymbol.Name;
+
+            var comparer = new FullyQualifiedNameComparer();
+            foreach (var project in solution.Projects)
+            {
+                foreach (var document in project.Documents)
+                {
+                    var root = await document.GetSyntaxRootAsync();
+                    var model = await document.GetSemanticModelAsync();
+                    if (root == null || model == null) continue;
+
+                    var installCalls = root.DescendantNodes()
+                        .OfType<InvocationExpressionSyntax>()
+                        .Where(inv =>
+                            inv.Expression is MemberAccessExpressionSyntax memberAccess &&
+                            memberAccess.Name.Identifier.Text == "Install")
+                        .ToList();
+
+                    foreach (var call in installCalls)
+                    {
+                        var argumentTypes = call.ArgumentList.Arguments
+                            .Select(arg => model.GetTypeInfo(arg.Expression).Type)
+                            .OfType<INamedTypeSymbol>();
+
+                        foreach (var argSymbol in argumentTypes)
+                        {
+                            if (comparer.Equals(argSymbol, installerSymbol))
+                            {
+                                result.Add(project.Name);
+                                break; // No need to check other args in this call
+                            }
+                        }
+                    }
+                }
+            }
+
+            return result.Distinct().ToList();
+        }
+
+        private static INamedTypeSymbol? FindInstallerInDocument(SemanticModel model, SyntaxNode root)
+        {
+            var classDecl = root.DescendantNodes().OfType<ClassDeclarationSyntax>().FirstOrDefault();
+            if (classDecl == null) return null;
+
+            var symbol = model.GetDeclaredSymbol(classDecl) as INamedTypeSymbol;
+            if (symbol == null) return null;
+
+            return symbol.AllInterfaces.Any(i => i.Name == "IWindsorInstaller") ? symbol : null;
         }
 
         private static RegistrationInfo GetRegistrationForFactoryMethod(INamedTypeSymbol registeredSymbol, InvocationExpressionSyntax invocation, string projectName)
@@ -271,43 +376,6 @@ namespace DependencyAnalyzer
                 return LifetimeTypes.Singleton;
             
             return LifetimeTypes.Singleton; // Default for Castle Windsor
-        }
-
-        public Dictionary<string, RegistrationInfo> GetRegistrationsForSymbol(INamedTypeSymbol symbol)
-        {
-            var ret = new Dictionary<string, RegistrationInfo>();
-            var comparer = new FullyQualifiedNameComparer();
-
-            var relatedRegistrations = RegistrationInfos.Where(x =>
-                                            comparer.Equals(x.Implementation, symbol) ||
-                                            symbol.Interfaces.Any(y => comparer.Equals(x.Interface, y)));
-
-            foreach (var registration in relatedRegistrations)
-            {
-                ret.TryAdd(registration.ProjectName, registration);
-            }
-
-            return ret;
-        }
-    }
-    public class FullyQualifiedNameComparer : IEqualityComparer<INamedTypeSymbol>
-    {
-        public bool Equals(INamedTypeSymbol? x, INamedTypeSymbol? y)
-        {
-            if (x is null || y is null)
-                return false;
-
-            return GetKey(x) == GetKey(y);
-        }
-
-        public int GetHashCode(INamedTypeSymbol obj)
-        {
-            return GetKey(obj).GetHashCode();
-        }
-
-        private string GetKey(INamedTypeSymbol symbol)
-        {
-            return symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         }
     }
 }
