@@ -68,7 +68,7 @@ namespace DependencyAnalyzer
                     Class = symbol,
                     ClassName = symbol.ToDisplayString(),                   // Fully qualified type name
                     ProjectName = symbol.ContainingAssembly.Name,           // Approximate project name
-                    RegistrationInfo = solutionAnalyzer.GetRegistrationsForSymbol(symbol)      // Placeholder for now
+                    RegistrationInfo = solutionAnalyzer.GetRegistrationsForSymbol(symbol)
                 };
 
                 nodeMap[symbol] = node;

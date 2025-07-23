@@ -1,7 +1,5 @@
 ﻿using DependencyAnalyzer;
-using Microsoft.Build.Locator;
-
-
+using System.Diagnostics;
 
 /*
  * Infrastructure.InSite.LinqToSql.StandardRepositoryRegistrar
@@ -34,38 +32,24 @@ foreach (var file in fileToUpdate)
 }
 */
 
+var stopwatch = Stopwatch.StartNew(); // Start the timer
+
+
+
+
 var solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\onlineservices\\Source\\InSite.sln");
-
-// 2. Build dependency map
 var dependencyMap = DependencyAnalyzer.DependencyAnalyzer.GetClassDependencies(solutionAnalyzer);
-
-// 3. Build full graph
 var graph = DependencyAnalyzer.DependencyAnalyzer.BuildFullDependencyGraph(dependencyMap, solutionAnalyzer);
 
-// 4. Find a root class you're interested in (by class name, namespace, etc.)
 
-//normal registration
-Console.WriteLine("One off registration");
-var normalRegistration = graph.Values.FirstOrDefault(n => n.ClassName == "Core.InSite.SiteContext");
-Console.WriteLine(normalRegistration.PrintRegistrations());
+stopwatch.Stop(); // Stop the timer
+Console.WriteLine($"~~~ TIMER ~~~");
+Console.WriteLine($"Elapsed time: {stopwatch.ElapsedMilliseconds} ms");
+Console.WriteLine($"~~~ TIMER ~~~");
 
-
-//standard install registration
 Console.WriteLine("standard install registration");
-var installerRegi = graph.Values.FirstOrDefault(n => n.ClassName == "Infrastructure.InSite.LinqToSql.ECommerce.vXTaxPaymentDetailsRepository");
-Console.WriteLine(installerRegi.PrintRegistrations());
+var node = graph.Values.FirstOrDefault(n => n.ClassName == "Infrastructure.InSite.LinqToSql.ECommerce.BillRepository");
+Console.WriteLine(node.PrintRegistrations());
 
-/*
-
-if (rootNode is not null)
-{
-    // 5. Print the dependency tree
-    File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\dependency-output.txt", rootNode.PrintDependencyTree());
-    File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\usedBy-output.txt", rootNode.PrintConsumerTree());
-}
-else
-{
-    Console.WriteLine("Target class not found.");
-}
-
-*/
+File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\dependency-output.txt", node.PrintDependencyTree());
+File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\usedBy-output.txt", node.PrintConsumerTree());
