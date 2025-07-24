@@ -32,12 +32,26 @@ namespace DependencyAnalyzer
             var ret = new Dictionary<string, RegistrationInfo>();
             var comparer = new FullyQualifiedNameComparer();
 
-            var relatedRegistrations = RegistrationInfos.Where(registration =>
-                                            comparer.Equals(registration.Implementation, symbol) ||
-                                            (registration.IsFactoryMethod && // Dont have good parsing for factory methods.
-                                                registration.Interface != null && // Assume any implementation of the interface could be registered
-                                                symbol.Interfaces.Any(y => comparer.Equals(registration.Interface, y))
-                                            ));
+            var relatedRegistrations = new List<RegistrationInfo>();
+
+            if(symbol.TypeKind == TypeKind.Interface)
+            {
+                relatedRegistrations = RegistrationInfos.Where(registration =>
+                    comparer.Equals(registration.Interface, symbol)
+                ).ToList();
+            }
+            else if(symbol.TypeKind == TypeKind.Class)
+            {
+                relatedRegistrations = RegistrationInfos.Where(registration =>
+                        //If this is an implementation
+                        comparer.Equals(registration.Implementation, symbol) ||
+                        //Or a type that implements a factory interface
+                        (registration.IsFactoryMethod && // Dont have good parsing for factory methods.
+                            registration.Interface != null && // Assume any implementation of the interface could be registered
+                            symbol.Interfaces.Any(currentSymbolInterface => comparer.Equals(registration.Interface, currentSymbolInterface))
+                        )).ToList();
+            }
+
 
             foreach (var registration in relatedRegistrations)
             {

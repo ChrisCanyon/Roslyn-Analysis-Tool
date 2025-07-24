@@ -14,8 +14,13 @@ namespace DependencyAnalyzer
             foreach (var project in solution.Projects)
             {
                 if (project.Name.ToLower().Contains("test")) continue;
-
+                //no async for debug
+                #if DEBUG
+                var projectRegistrations = await GetRegistrationsFromProjectAsync(project, solution);
+                ret.AddRange(projectRegistrations);
+                #else
                 registrationTasks.Add(GetRegistrationsFromProjectAsync(project, solution));
+                #endif
             }
 
             await Task.WhenAll(registrationTasks.ToArray());
@@ -61,7 +66,7 @@ namespace DependencyAnalyzer
                     var registration = ParseRegistration(invocation, model, project.Name);
 
                     //Clean up installer junk
-                    if (currentInstallerSymbol != null)
+                    if (currentInstallerSymbol != null && calledProjects.Count > 0)
                     {
                         registration = registration.SelectMany(incompleteRegistration =>
                                                         calledProjects.Select(project =>

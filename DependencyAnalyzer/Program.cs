@@ -34,12 +34,17 @@ foreach (var file in fileToUpdate)
 
 var stopwatch = Stopwatch.StartNew(); // Start the timer
 
-
-
-
 var solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\onlineservices\\Source\\InSite.sln");
 var dependencyMap = DependencyAnalyzer.DependencyAnalyzer.GetClassDependencies(solutionAnalyzer);
 var graph = DependencyAnalyzer.DependencyAnalyzer.BuildFullDependencyGraph(dependencyMap, solutionAnalyzer);
+
+
+var ApiTPRegistrations = solutionAnalyzer.RegistrationInfos.Where(x => x.ProjectName.Contains("Api.TylerPayments"));
+
+
+
+
+
 
 
 //Check for self references
