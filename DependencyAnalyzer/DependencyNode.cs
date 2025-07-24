@@ -1,4 +1,5 @@
 ﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -75,6 +76,54 @@ namespace DependencyAnalyzer
             path.Pop();
         }
 
+        public ColoredStringBuilder PrintConsumerTreeForProject(string project)
+        {
+            var sb = new ColoredStringBuilder();
+            sb.AppendLine($"OBJECTS DEPENDENT ON {ClassName} FOR PROJECT {project}", ConsoleColor.Blue);
+            var currentPath = new Stack<INamedTypeSymbol>();
+            PrintDependedOnByForProject(this, project, "", true, currentPath, sb);
+            return sb;
+        }
+
+        private void PrintDependedOnByForProject(DependencyNode node, string project, string prefix, bool isLast, Stack<INamedTypeSymbol> path, ColoredStringBuilder sb)
+        {
+            var projectRegistration = node.RegistrationInfo.Values.FirstOrDefault(x => x.ProjectName == project);
+            if (projectRegistration == null) return;
+
+            ConsoleColor consoleColor;
+            switch (projectRegistration.RegistrationType)
+            {
+                case LifetimeTypes.Transient:
+                    consoleColor = ConsoleColor.Green;
+                    break;
+                case LifetimeTypes.PerWebRequest:
+                    consoleColor = ConsoleColor.Yellow;
+                    break;
+                default:
+                    consoleColor = ConsoleColor.Red;
+                    break;
+            }
+
+
+            string marker = prefix == "" ? "" : (isLast ? "╘═ " : "╞═ ");
+            var cycle = path.Contains(node.Class, SymbolEqualityComparer.Default) ? " ↩ (cycle)" : "";
+            sb.AppendLine($"{prefix}{marker}{node.ClassName}{cycle}", consoleColor);
+
+            if (!string.IsNullOrEmpty(cycle))
+                return;
+
+            path.Push(node.Class);
+
+            var dependents = node.DependedOnBy.ToList();
+            for (int i = 0; i < dependents.Count; i++)
+            {
+                var isLastChild = (i == dependents.Count - 1);
+                var childPrefix = prefix + (isLast ? "   " : "│  ");
+                PrintDependedOnByForProject(dependents[i], project, childPrefix, isLastChild, path, sb);
+            }
+
+            path.Pop();
+        }
         public string PrintConsumerTree()
         {
             var sb = new StringBuilder();

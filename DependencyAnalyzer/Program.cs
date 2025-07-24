@@ -1,5 +1,6 @@
 ﻿using DependencyAnalyzer;
 using System.Diagnostics;
+using System.Xml.Linq;
 
 /*
  * Infrastructure.InSite.LinqToSql.StandardRepositoryRegistrar
@@ -38,58 +39,49 @@ var solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDe
 var dependencyMap = DependencyAnalyzer.DependencyAnalyzer.GetClassDependencies(solutionAnalyzer);
 var graph = DependencyAnalyzer.DependencyAnalyzer.BuildFullDependencyGraph(dependencyMap, solutionAnalyzer);
 
-
-var ApiTPRegistrations = solutionAnalyzer.RegistrationInfos.Where(x => x.ProjectName.Contains("Api.TylerPayments"));
-
-
-
-
-
-
-
-//Check for self references
+stopwatch.Stop(); // Stop the timer
+Console.WriteLine($"~~~ SETUP TIMER ~~~");
+Console.WriteLine($"Elapsed time: {stopwatch.ElapsedMilliseconds} ms");
+Console.WriteLine($"~~~ END TIMER ~~~");
 
 var comparer = new FullyQualifiedNameComparer();
 
-//Check for unregistered dependencies
-foreach(var node in graph.Values)
+var n = graph.Values.First(n => n.ClassName == "Core.InSite.SiteContext");
+
+/*
+foreach(var entry in n.RegistrationInfo)
 {
-    foreach (var registration in node.RegistrationInfo)
+    var registration = entry.Value;
+    foreach (var dependentReference in n.DependedOnBy)
     {
-        foreach(var dependency in node.DependsOn)
+        var registrationForProject = dependentReference.RegistrationInfo.Where(x => x.Value.ProjectName == registration.ProjectName);
+        if(registrationForProject.Count() > 1)
         {
-            if (!dependency.RegistrationInfo.ContainsKey(registration.Key))
-            {
-                //if the depedency is an implementation
-                if(node.Implements.Any(x => comparer.Equals(dependency.Class, x.Class))){
-                    Console.WriteLine($"~~~ Circular Dependency ~~~");
-                    Console.WriteLine($"Class: {node.ClassName}");
-                    Console.WriteLine($"Relies on: {dependency.ClassName}");
-                    Console.WriteLine($"For project {registration.Key}");
-                    Console.WriteLine($"~~~ END ~~~");
-                }
-                Console.WriteLine($"~~~ Dependency Unregistered Error ~~~");
-                Console.WriteLine($"Class: {node.ClassName}");
-                Console.WriteLine($"Relies on: {dependency.ClassName}");
-                Console.WriteLine($"For project {registration.Key}");
-                Console.WriteLine($"but {dependency.ClassName} was not registered in that project");
-                Console.WriteLine($"~~~ END ~~~");
-            }
+            Console.WriteLine($"Double register for class: {dependentReference.ClassName} in project: {registration.ProjectName}");
+            continue;
+        }
+        if(registrationForProject.Count() == 0)
+        {
+            continue;
+        }
+
+        var dependantRegistration = registrationForProject.First().Value;
+        if (dependantRegistration.RegistrationType > registration.RegistrationType)
+        {
+            Console.WriteLine($"LIFETIME VIOLATION");
+            Console.WriteLine($"    Class: {dependentReference.ClassName} has lifetime of {dependantRegistration.RegistrationType}");
+            Console.WriteLine($"    but references shorter lived class: {n.ClassName} with lifetime {registration.RegistrationType}");
+            Console.WriteLine($"    in project: {registration.ProjectName}");
         }
     }
 }
-
-
-
-
-
-stopwatch.Stop(); // Stop the timer
-Console.WriteLine($"~~~ TIMER ~~~");
-Console.WriteLine($"Elapsed time: {stopwatch.ElapsedMilliseconds} ms");
-Console.WriteLine($"~~~ TIMER ~~~");
-
-var n = graph.Values.FirstOrDefault(n => n.ClassName == "Infrastructure.InSite.LinqToSql.ECommerce.BillRepository");
-Console.WriteLine(n.PrintRegistrations());
+*/
+foreach (var entry in n.RegistrationInfo)
+{
+    var sb = n.PrintConsumerTreeForProject(entry.Value.ProjectName);
+    sb.Write();
+}
+//Console.WriteLine(n.PrintRegistrations());
 
 File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\dependency-output.txt", n.PrintDependencyTree());
 File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\usedBy-output.txt", n.PrintConsumerTree());
