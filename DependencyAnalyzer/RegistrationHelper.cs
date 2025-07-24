@@ -1,11 +1,12 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using DependencyAnalyzer.Interfaces;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DependencyAnalyzer
 {
-    class RegistrationHelper
+    class RegistrationHelper : IRegistrationHelper
     {
-        public static async Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution)
+        public async Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution)
         {
             var ret = new List<RegistrationInfo>();
 
@@ -34,7 +35,7 @@ namespace DependencyAnalyzer
             return ret;
         }
 
-        private static async Task<List<RegistrationInfo>> GetRegistrationsFromProjectAsync(Project project, Solution solution)
+        private async Task<List<RegistrationInfo>> GetRegistrationsFromProjectAsync(Project project, Solution solution)
         {
             var registrations = new List<RegistrationInfo>();
 
@@ -87,7 +88,7 @@ namespace DependencyAnalyzer
             return registrations;
         }
 
-        private static INamedTypeSymbol? FindInstallerInDocument(SemanticModel model, SyntaxNode root)
+        private INamedTypeSymbol? FindInstallerInDocument(SemanticModel model, SyntaxNode root)
         {
             var classDecl = root.DescendantNodes().OfType<ClassDeclarationSyntax>().FirstOrDefault();
             if (classDecl == null) return null;
@@ -98,7 +99,7 @@ namespace DependencyAnalyzer
             return symbol.AllInterfaces.Any(i => i.Name == "IWindsorInstaller") ? symbol : null;
         }
 
-        private static async Task<List<string>> GetInstallerReferencesAsync(Solution solution, INamedTypeSymbol installerSymbol)
+        private async Task<List<string>> GetInstallerReferencesAsync(Solution solution, INamedTypeSymbol installerSymbol)
         {
             var result = new List<string>();
             var installerName = installerSymbol.Name;
@@ -140,7 +141,7 @@ namespace DependencyAnalyzer
             return result.Distinct().ToList();
         }
 
-        private static List<RegistrationInfo> ParseRegistration(InvocationExpressionSyntax invocation, SemanticModel model, string projectName)
+        private List<RegistrationInfo> ParseRegistration(InvocationExpressionSyntax invocation, SemanticModel model, string projectName)
         {
             if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
             {
@@ -206,7 +207,7 @@ namespace DependencyAnalyzer
             return new List<RegistrationInfo>();
         }
 
-        private static RegistrationInfo GetRegistrationForFactoryMethod(INamedTypeSymbol registeredSymbol, InvocationExpressionSyntax invocation, string projectName)
+        private RegistrationInfo GetRegistrationForFactoryMethod(INamedTypeSymbol registeredSymbol, InvocationExpressionSyntax invocation, string projectName)
         {
             var regType = ExtractLifestyle(invocation);
 
@@ -234,7 +235,7 @@ namespace DependencyAnalyzer
             }
         }
 
-        private static RegistrationInfo GetRegistrationForImplementationOnly(INamedTypeSymbol registeredClass, InvocationExpressionSyntax invocation, string projectName)
+        private RegistrationInfo GetRegistrationForImplementationOnly(INamedTypeSymbol registeredClass, InvocationExpressionSyntax invocation, string projectName)
         {
             if (registeredClass.TypeKind == TypeKind.Interface)
             {
@@ -254,7 +255,7 @@ namespace DependencyAnalyzer
                 ProjectName = projectName
             };
         }
-        private static RegistrationInfo GetRegistrationForImplementationAndInterface(INamedTypeSymbol registeredInterface, INamedTypeSymbol registeredImplementation, InvocationExpressionSyntax invocation, string projectName)
+        private RegistrationInfo GetRegistrationForImplementationAndInterface(INamedTypeSymbol registeredInterface, INamedTypeSymbol registeredImplementation, InvocationExpressionSyntax invocation, string projectName)
         {
             var regType = ExtractLifestyle(invocation);
 
@@ -284,7 +285,7 @@ namespace DependencyAnalyzer
                 ProjectName = projectName
             };
         }
-        private static LifetimeTypes ExtractLifestyle(InvocationExpressionSyntax invocation)
+        private LifetimeTypes ExtractLifestyle(InvocationExpressionSyntax invocation)
         {
             var fullCall = invocation.ToFullString();
 

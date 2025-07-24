@@ -1,43 +1,15 @@
 ﻿using DependencyAnalyzer;
 using System.Diagnostics;
-using System.Xml.Linq;
-
-/*
- * Infrastructure.InSite.LinqToSql.StandardRepositoryRegistrar
- * Api.TylerPayments.ApiTPRegistrar
- * InSite.Backstage.WindsorInstaller
- * InSiteMVC.Registrar
- * Infrastructure.Api.InSite.Registration.InSiteApiRegistrar
- * Infrastructure.InSite.LinqToSql.StandardRepositoryRegistrar
- * InSite.Bll.StandardAutoPayRegistrar
- */
-/*
-var fileToUpdate = new List<string> { 
-    "Infrastructure.InSite.LinqToSql.StandardRepositoryRegistrar",
-    "Api.TylerPayments.ApiTPRegistrar",
-    "InSite.Backstage.WindsorInstaller",
-    "InSiteMVC.Registrar",
-    "Infrastructure.Api.InSite.Registration.InSiteApiRegistrar",
-    "Infrastructure.InSite.LinqToSql.StandardRepositoryRegistrar",
-    "InSite.Bll.StandardAutoPayRegistrar"
-};
-
-MSBuildLocator.RegisterDefaults();
-
-foreach (var file in fileToUpdate)
-{
-    await rewriter.RewriteRegisterForAsync(
-        "C:\\TylerDev\\onlineservices\\Source\\InSite.sln", 
-        file
-    );
-}
-*/
 
 var stopwatch = Stopwatch.StartNew(); // Start the timer
 
-var solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\onlineservices\\Source\\InSite.sln");
-var dependencyMap = DependencyAnalyzer.DependencyAnalyzer.GetClassDependencies(solutionAnalyzer);
-var graph = DependencyAnalyzer.DependencyAnalyzer.BuildFullDependencyGraph(dependencyMap, solutionAnalyzer);
+var solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer(
+                            "C:\\TylerDev\\onlineservices\\Source\\InSite.sln",
+                            new RegistrationHelper() //Replace with implementation that can read your projects registration pattern
+                            );
+
+var dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
+var graph = dependencyAnalyzer.BuildFullDependencyGraph();
 
 stopwatch.Stop(); // Stop the timer
 Console.WriteLine($"~~~ SETUP TIMER ~~~");
@@ -76,12 +48,13 @@ foreach(var entry in n.RegistrationInfo)
     }
 }
 */
+
 foreach (var entry in n.RegistrationInfo)
 {
-    var sb = n.PrintConsumerTreeForProject(entry.Value.ProjectName);
+    var sb = NodePrinter.PrintConsumerTreeForProject(n, entry.Value.ProjectName);
     sb.Write();
 }
 //Console.WriteLine(n.PrintRegistrations());
 
-File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\dependency-output.txt", n.PrintDependencyTree());
-File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\usedBy-output.txt", n.PrintConsumerTree());
+File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\dependency-output.txt", NodePrinter.PrintDependencyTree(n));
+File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\usedBy-output.txt", NodePrinter.PrintConsumerTree(n));

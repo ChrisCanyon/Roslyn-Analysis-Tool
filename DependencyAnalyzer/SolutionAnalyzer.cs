@@ -2,6 +2,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using DependencyAnalyzer.Interfaces;
 
 namespace DependencyAnalyzer
 {
@@ -11,14 +12,14 @@ namespace DependencyAnalyzer
         public List<INamedTypeSymbol> AllTypes { get; private set; }
         public List<RegistrationInfo> RegistrationInfos { get; private set; }
 
-        public static async Task<SolutionAnalyzer> BuildSolutionAnalyzer(string solutionPath)
+        public static async Task<SolutionAnalyzer> BuildSolutionAnalyzer(string solutionPath, IRegistrationHelper regirationHelper)
         {
             MSBuildLocator.RegisterDefaults();
             using var workspace = MSBuildWorkspace.Create();
             var s = await workspace.OpenSolutionAsync(solutionPath);
 
             var allTypesTask = GetAllTypesInSolutionAsync(s);
-            var registrationInfosTask = RegistrationHelper.GetSolutionRegistrations(s);
+            var registrationInfosTask = regirationHelper.GetSolutionRegistrations(s);
 
             await Task.WhenAll(allTypesTask, registrationInfosTask);
 

@@ -4,9 +4,16 @@ namespace DependencyAnalyzer
 {
     public class DependencyAnalyzer
     {
-        public static Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> GetClassDependencies(SolutionAnalyzer solutionAnalyzer)
+        private readonly Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> DependencyMap;
+        private readonly SolutionAnalyzer SolutionAnalyzer;
+        public DependencyAnalyzer(SolutionAnalyzer solutionAnalyzer) {
+            SolutionAnalyzer = solutionAnalyzer;
+            DependencyMap = GetClassDependencies();
+        }
+
+        private Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> GetClassDependencies()
         {
-            var classSymbols = solutionAnalyzer.AllTypes;
+            var classSymbols = SolutionAnalyzer.AllTypes;
 
             var comparer = SymbolEqualityComparer.Default;
             var dependencyMap = new Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>>(comparer);
@@ -33,42 +40,39 @@ namespace DependencyAnalyzer
             return dependencyMap;
         }
 
-        public static Dictionary<INamedTypeSymbol, DependencyNode> BuildFullDependencyGraph(
-            Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> dependencyMap,
-            SolutionAnalyzer solutionAnalyzer)
+        //TODO make node map a class variable
+        public Dictionary<INamedTypeSymbol, DependencyNode> BuildFullDependencyGraph()
         {
-            var allSymbols = solutionAnalyzer.AllTypes;
+            var nodeMap = CreateBaseNodes();
 
-            var nodeMap = CreateBaseNodes(allSymbols, solutionAnalyzer);
+            WireDependencies(nodeMap);
 
-            WireDependencies(dependencyMap, nodeMap);
-
-            WireInterfaceImplementations(allSymbols, nodeMap);
+            WireInterfaceImplementations(nodeMap);
 
             ExpandInterfaces(nodeMap);
 
             return nodeMap;
         }
 
-        private static void ExpandInterfaces(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
+        private void ExpandInterfaces(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
         {
             ExpandInterfaceDownstreamEdges(nodeMap);
             ExpandInterfaceUpstreamEdges(nodeMap);
         }
 
-        private static Dictionary<INamedTypeSymbol, DependencyNode> CreateBaseNodes(IEnumerable<INamedTypeSymbol> allSymbols, SolutionAnalyzer solutionAnalyzer)
+        private Dictionary<INamedTypeSymbol, DependencyNode> CreateBaseNodes()
         {
             var comparer = new FullyQualifiedNameComparer();
             var nodeMap = new Dictionary<INamedTypeSymbol, DependencyNode>(comparer);
 
-            foreach (var symbol in allSymbols)
+            foreach (var symbol in SolutionAnalyzer.AllTypes)
             {
                 var node = new DependencyNode
                 {
                     Class = symbol,
                     ClassName = symbol.ToDisplayString(),                   // Fully qualified type name
                     ProjectName = symbol.ContainingAssembly.Name,           // Approximate project name
-                    RegistrationInfo = solutionAnalyzer.GetRegistrationsForSymbol(symbol)
+                    RegistrationInfo = SolutionAnalyzer.GetRegistrationsForSymbol(symbol)
                 };
 
                 nodeMap[symbol] = node;
@@ -77,13 +81,12 @@ namespace DependencyAnalyzer
             return nodeMap;
         }
 
-        private static void WireDependencies(
-            Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> dependencyMap,
+        private void WireDependencies(
             Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
         {
             var comparer = SymbolEqualityComparer.Default;
 
-            foreach (var (classSymbol, dependencies) in dependencyMap)
+            foreach (var (classSymbol, dependencies) in DependencyMap)
             {
                 if (!nodeMap.TryGetValue(classSymbol, out var classNode))
                     continue;
@@ -100,11 +103,10 @@ namespace DependencyAnalyzer
             }
         }
 
-        private static void WireInterfaceImplementations(
-            IEnumerable<INamedTypeSymbol> allSymbols,
+        private void WireInterfaceImplementations(
             Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
         {
-            foreach (var classSymbol in allSymbols)
+            foreach (var classSymbol in SolutionAnalyzer.AllTypes)
             {
                 // Skip interfaces and non-source symbols
                 if (classSymbol.TypeKind != TypeKind.Class || !classSymbol.Locations.Any(loc => loc.IsInSource))
@@ -124,7 +126,7 @@ namespace DependencyAnalyzer
             }
         }
 
-        private static void ExpandInterfaceDownstreamEdges(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
+        private void ExpandInterfaceDownstreamEdges(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
         {
             foreach (var node in nodeMap.Values)
             {
@@ -152,7 +154,7 @@ namespace DependencyAnalyzer
             }
         }
 
-        private static void ExpandInterfaceUpstreamEdges(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
+        private void ExpandInterfaceUpstreamEdges(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
         {
             foreach (var node in nodeMap.Values)
             {
