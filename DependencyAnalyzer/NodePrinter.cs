@@ -1,6 +1,5 @@
 ﻿using Microsoft.CodeAnalysis;
 using System.Text;
-using System.Xml.Linq;
 
 namespace DependencyAnalyzer
 {
@@ -13,6 +12,7 @@ namespace DependencyAnalyzer
             PrintDependenciesRecursive(startNode, "", true, currentPath, sb);
             return sb.ToString();
         }
+        
         private static void PrintDependenciesRecursive(DependencyNode node, string prefix, bool isLast, Stack<INamedTypeSymbol> path, StringBuilder sb)
         {
             string marker = prefix == "" ? "" : (isLast ? "└─ " : "├─ ");
@@ -40,29 +40,21 @@ namespace DependencyAnalyzer
             var sb = new ColoredStringBuilder();
             sb.AppendLine($"OBJECTS DEPENDENT ON {startNode.ClassName} FOR PROJECT {project}", ConsoleColor.Blue);
             var currentPath = new Stack<INamedTypeSymbol>();
-            PrintDependedOnByForProject(startNode, project, "", true, currentPath, sb);
+            var rootLifetime = startNode.RegistrationInfo[project].RegistrationType;
+            PrintDependedOnByForProject(startNode, project, rootLifetime, "", true, currentPath, sb);
             return sb;
         }
 
-        private static void PrintDependedOnByForProject(DependencyNode node, string project, string prefix, bool isLast, Stack<INamedTypeSymbol> path, ColoredStringBuilder sb)
+        private static void PrintDependedOnByForProject(DependencyNode node, string project, LifetimeTypes rootLifetime, string prefix, bool isLast, Stack<INamedTypeSymbol> path, ColoredStringBuilder sb)
         {
             var projectRegistration = node.RegistrationInfo.Values.FirstOrDefault(x => x.ProjectName == project);
             if (projectRegistration == null) return;
 
-            ConsoleColor consoleColor;
-            switch (projectRegistration.RegistrationType)
+            ConsoleColor consoleColor = ConsoleColor.Green;
+            if (projectRegistration.RegistrationType > rootLifetime)
             {
-                case LifetimeTypes.Transient:
-                    consoleColor = ConsoleColor.Green;
-                    break;
-                case LifetimeTypes.PerWebRequest:
-                    consoleColor = ConsoleColor.Yellow;
-                    break;
-                default:
-                    consoleColor = ConsoleColor.Red;
-                    break;
+                consoleColor = ConsoleColor.Red;
             }
-
 
             string marker = prefix == "" ? "" : (isLast ? "╘═ " : "╞═ ");
             var cycle = path.Contains(node.Class, SymbolEqualityComparer.Default) ? " ↩ (cycle)" : "";
@@ -73,16 +65,17 @@ namespace DependencyAnalyzer
 
             path.Push(node.Class);
 
-            var dependents = node.DependedOnBy.ToList();
-            for (int i = 0; i < dependents.Count; i++)
+            var dependants = node.DependedOnBy.ToList();
+            for (int i = 0; i < dependants.Count; i++)
             {
-                var isLastChild = (i == dependents.Count - 1);
+                var isLastChild = (i == dependants.Count - 1);
                 var childPrefix = prefix + (isLast ? "   " : "│  ");
-                PrintDependedOnByForProject(dependents[i], project, childPrefix, isLastChild, path, sb);
+                PrintDependedOnByForProject(dependants[i], project, rootLifetime, childPrefix, isLastChild, path, sb);
             }
 
             path.Pop();
         }
+        
         public static string PrintConsumerTree(DependencyNode startNode)
         {
             var sb = new StringBuilder();
@@ -102,12 +95,12 @@ namespace DependencyAnalyzer
 
             path.Push(node.Class);
 
-            var dependents = node.DependedOnBy.ToList();
-            for (int i = 0; i < dependents.Count; i++)
+            var dependants = node.DependedOnBy.ToList();
+            for (int i = 0; i < dependants.Count; i++)
             {
-                var isLastChild = (i == dependents.Count - 1);
+                var isLastChild = (i == dependants.Count - 1);
                 var childPrefix = prefix + (isLast ? "   " : "│  ");
-                PrintDependedOnByRecursive(dependents[i], childPrefix, isLastChild, path, sb);
+                PrintDependedOnByRecursive(dependants[i], childPrefix, isLastChild, path, sb);
             }
 
             path.Pop();

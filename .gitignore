@@ -7,7 +7,7 @@ TestResults/
 *.cache
 *.log
 
-*output.txt
+output/*
 
 ## VS Code settings
 .vscode/

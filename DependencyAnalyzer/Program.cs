@@ -18,36 +18,8 @@ Console.WriteLine($"~~~ END TIMER ~~~");
 
 var comparer = new FullyQualifiedNameComparer();
 
-var n = graph.Values.First(n => n.ClassName == "Core.InSite.SiteContext");
-
-/*
-foreach(var entry in n.RegistrationInfo)
-{
-    var registration = entry.Value;
-    foreach (var dependentReference in n.DependedOnBy)
-    {
-        var registrationForProject = dependentReference.RegistrationInfo.Where(x => x.Value.ProjectName == registration.ProjectName);
-        if(registrationForProject.Count() > 1)
-        {
-            Console.WriteLine($"Double register for class: {dependentReference.ClassName} in project: {registration.ProjectName}");
-            continue;
-        }
-        if(registrationForProject.Count() == 0)
-        {
-            continue;
-        }
-
-        var dependantRegistration = registrationForProject.First().Value;
-        if (dependantRegistration.RegistrationType > registration.RegistrationType)
-        {
-            Console.WriteLine($"LIFETIME VIOLATION");
-            Console.WriteLine($"    Class: {dependentReference.ClassName} has lifetime of {dependantRegistration.RegistrationType}");
-            Console.WriteLine($"    but references shorter lived class: {n.ClassName} with lifetime {registration.RegistrationType}");
-            Console.WriteLine($"    in project: {registration.ProjectName}");
-        }
-    }
-}
-*/
+//var n = graph.Values.First(n => n.ClassName == "Core.InSite.SiteContext");
+var n = graph.Values.First(n => n.ClassName == "Core.Services.IEmailService");
 
 foreach (var entry in n.RegistrationInfo)
 {
@@ -56,5 +28,14 @@ foreach (var entry in n.RegistrationInfo)
 }
 //Console.WriteLine(n.PrintRegistrations());
 
-File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\dependency-output.txt", NodePrinter.PrintDependencyTree(n));
-File.WriteAllText("C:\\Users\\christopher.nagy\\workspace\\DependencyAnalyzer\\usedBy-output.txt", NodePrinter.PrintConsumerTree(n));
+var reportRunner = new ErrorReportRunner(graph);
+var projectIssues = reportRunner.FindLifetimeMismatches();
+
+var path = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
+path = Path.Combine(path, "output");
+
+var test = Path.Combine(path, "dependency-output.txt");
+
+File.WriteAllText(Path.Combine(path, "dependency-output.txt"), NodePrinter.PrintDependencyTree(n));
+File.WriteAllText(Path.Combine(path, "usedBy-output.txt"), NodePrinter.PrintConsumerTree(n));
+File.WriteAllText(Path.Combine(path, "Lifetime-Issues.txt"), projectIssues);

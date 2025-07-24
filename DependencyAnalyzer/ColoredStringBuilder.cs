@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-class ColoredSegment
+﻿class ColoredSegment
 {
     public ConsoleColor Color { get; }
     public string Text { get; }
