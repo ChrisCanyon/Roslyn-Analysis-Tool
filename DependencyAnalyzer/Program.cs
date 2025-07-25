@@ -24,13 +24,16 @@ var comparer = new FullyQualifiedNameComparer();
 var n = graph.Values.First(n => n.ClassName == "Core.Services.IEmailService");
 //var n = graph.Values.First(n => n.ClassName == "InSite.Bll.AutoPayManager");
 
+
+
 foreach (var entry in n.RegistrationInfo.Take(1))
 {
     NodePrinter.PrintConsumerTreeForProject(n, entry.Value.ProjectName).Write();
     NodePrinter.PrintDependencyTreeForProject(n, entry.Value.ProjectName).Write();
     GraphvizConverter.CreateConsumerGraphvizForProject(n, entry.Value.ProjectName);
     GraphvizConverter.CreateDependencyGraphvizForProject(n, entry.Value.ProjectName);
-    GraphvizConverter.CreateFullGraphvizForProject(n, entry.Value.ProjectName);
+    GraphvizConverter.CreateGraphvizForProjectNode(n, entry.Value.ProjectName);
+    GraphvizConverter.CreateFullGraphvizForProject(graph, entry.Value.ProjectName);
 }
 //Console.WriteLine(n.PrintRegistrations());
 

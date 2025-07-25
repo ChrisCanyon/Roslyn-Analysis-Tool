@@ -1,14 +1,24 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using Microsoft.Build.Evaluation;
+using Microsoft.CodeAnalysis;
 using System.Diagnostics;
-using System.Reflection.Emit;
 using System.Text;
-using System.Xml.Linq;
 
 namespace DependencyAnalyzer.Visualizers
 {
     public static class GraphvizConverter
     {
-        
+        public static void CreateFullGraphvizForProject(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
+        {
+            var basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
+            basePath = Path.Combine(basePath, "output");
+
+            var dotPath = Path.Combine(basePath, $"{project}-Full.dot");
+            var svgPath = Path.Combine(basePath, $"{project}-Full.svg");
+
+            File.WriteAllText(dotPath, GetGraphvizStringForProject(graph, project));
+
+            GenerateSvg(dotPath, svgPath);
+        }
 
         public static void CreateConsumerGraphvizForProject(DependencyNode startNode, string project)
         {
@@ -36,7 +46,7 @@ namespace DependencyAnalyzer.Visualizers
             GenerateSvg(dotPath, svgPath);
         }
 
-        public static void CreateFullGraphvizForProject(DependencyNode startNode, string project)
+        public static void CreateGraphvizForProjectNode(DependencyNode startNode, string project)
         {
             var basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
             basePath = Path.Combine(basePath, "output");
@@ -44,7 +54,7 @@ namespace DependencyAnalyzer.Visualizers
             var dotPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Full.dot");
             var svgPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Full.svg");
 
-            File.WriteAllText(dotPath, GetFullGraphvizString(startNode, project));
+            File.WriteAllText(dotPath, GetNodeGraphvizString(startNode, project));
 
             GenerateSvg(dotPath, svgPath);
         }
@@ -124,8 +134,7 @@ namespace DependencyAnalyzer.Visualizers
             path.Pop();
         }
 
-
-        public static string GetFullGraphvizString(DependencyNode startNode, string project)
+        private static string GetNodeGraphvizString(DependencyNode startNode, string project)
         {
             var sb = new StringBuilder();
 
@@ -139,6 +148,61 @@ namespace DependencyAnalyzer.Visualizers
 
             sb.AppendLine("}");
             return sb.ToString();
+        }
+
+        private static string GetGraphvizStringForProject(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("digraph Dependencies {");
+            sb.AppendLine("\t rankdir=RL;");
+
+            var projectNodes = graph.Values.Where(x => x.RegistrationInfo.ContainsKey(project));
+            foreach (var node in projectNodes)
+            {
+                ProcessSingleNode(node, project, sb);
+            }
+
+            sb.AppendLine("}");
+            return sb.ToString();
+        }
+
+        //this is called for every node in a project
+        private static void ProcessSingleNode(DependencyNode node, string project, StringBuilder sb)
+        {
+            var dependencies = GetReleventInterfaceAndImplementations(node.DependsOn, project);
+            var registration = node.RegistrationInfo[project];
+
+            //Create node for self
+            CreateNode(sb, node.ClassName, registration.RegistrationType);
+
+            foreach (var dependency in dependencies)
+            {
+                string label;
+                if (!dependency.RegistrationInfo.TryGetValue(project, out var dependencyReg))
+                {
+                    //Dependency was not registered for project. this is a runtime error probably
+
+                    //create node and edge
+                    var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
+                    CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
+                    label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
+                    CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                    continue;
+                }
+
+                if (dependencyReg.RegistrationType < registration.RegistrationType)
+                {
+                    label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
+                }
+                else
+                {
+                    label = "[color=green, fontcolor=green]";
+                }
+
+                //only create edge. the node will be created in subsequent calls to this method
+                CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+            }
         }
 
         private static string GetDependencyGraphvizString(DependencyNode startNode, string project)
