@@ -56,7 +56,24 @@ namespace DependencyAnalyzer
 
             foreach (var registration in relatedRegistrations)
             {
-                ret.TryAdd(registration.ProjectName, registration);
+                //I think i need to add the implementation to the factory method here
+                //if is factory method and has interface already
+                if(symbol.TypeKind == TypeKind.Class && registration.Interface != null && registration.Implementation == null)
+                {
+                    var completeRegistration = new RegistrationInfo
+                    {
+                        Interface = registration.Interface,
+                        Implementation = symbol,
+                        RegistrationType = registration.RegistrationType,
+                        ProjectName = registration.ProjectName,
+                        IsFactoryMethod = registration.IsFactoryMethod
+                    };
+                    ret.TryAdd(registration.ProjectName, completeRegistration);
+                }
+                else
+                {
+                    ret.TryAdd(registration.ProjectName, registration);
+                }
             }
 
             return ret;

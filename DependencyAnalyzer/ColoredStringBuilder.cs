@@ -1,4 +1,6 @@
-﻿class ColoredSegment
+﻿using System.Text;
+
+class ColoredSegment
 {
     public ConsoleColor Color { get; }
     public string Text { get; }
@@ -35,5 +37,16 @@ public class ColoredStringBuilder
         }
         Console.ResetColor();
         Console.WriteLine(); // Optional: move to new line
+    }
+
+    public string ToString()
+    {
+        var sb = new StringBuilder();
+        foreach (var segment in _segments)
+        {
+            sb.Append(segment.Text);
+        }
+
+        return sb.ToString();
     }
 }

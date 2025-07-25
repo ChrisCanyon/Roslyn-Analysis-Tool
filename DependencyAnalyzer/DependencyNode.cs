@@ -9,7 +9,8 @@ namespace DependencyAnalyzer
     {
         Transient,
         PerWebRequest,
-        Singleton
+        Singleton,
+        Unknown //maybe should be unregistered
     }
 
     public class RegistrationInfo

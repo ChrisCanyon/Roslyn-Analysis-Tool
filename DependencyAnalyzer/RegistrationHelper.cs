@@ -230,7 +230,7 @@ namespace DependencyAnalyzer
                     Implementation = registeredSymbol,
                     RegistrationType = regType,
                     ProjectName = projectName,
-                    IsFactoryMethod = true
+                    IsFactoryMethod = false //factory methods that dont implement interfaces must return the type specified
                 };
             }
         }

@@ -1,4 +1,5 @@
 ﻿using DependencyAnalyzer;
+using DependencyAnalyzer.Visualizers;
 using System.Diagnostics;
 
 var stopwatch = Stopwatch.StartNew(); // Start the timer
@@ -20,11 +21,15 @@ var comparer = new FullyQualifiedNameComparer();
 
 //var n = graph.Values.First(n => n.ClassName == "Core.InSite.SiteContext");
 var n = graph.Values.First(n => n.ClassName == "Core.Services.IEmailService");
+//var n = graph.Values.First(n => n.ClassName == "InSite.Bll.AutoPayManager");
 
-foreach (var entry in n.RegistrationInfo)
+foreach (var entry in n.RegistrationInfo.Take(1))
 {
-    var sb = NodePrinter.PrintConsumerTreeForProject(n, entry.Value.ProjectName);
-    sb.Write();
+    NodePrinter.PrintConsumerTreeForProject(n, entry.Value.ProjectName).Write();
+    NodePrinter.PrintDependencyTreeForProject(n, entry.Value.ProjectName).Write();
+    GraphvizConverter.CreateConsumerGraphvizForProject(n, entry.Value.ProjectName);
+    GraphvizConverter.CreateDependencyGraphvizForProject(n, entry.Value.ProjectName);
+    GraphvizConverter.CreateFullGraphvizForProject(n, entry.Value.ProjectName);
 }
 //Console.WriteLine(n.PrintRegistrations());
 
@@ -34,8 +39,4 @@ var projectIssues = reportRunner.FindLifetimeMismatches();
 var path = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
 path = Path.Combine(path, "output");
 
-var test = Path.Combine(path, "dependency-output.txt");
-
-File.WriteAllText(Path.Combine(path, "dependency-output.txt"), NodePrinter.PrintDependencyTree(n));
-File.WriteAllText(Path.Combine(path, "usedBy-output.txt"), NodePrinter.PrintConsumerTree(n));
 File.WriteAllText(Path.Combine(path, "Lifetime-Issues.txt"), projectIssues);
