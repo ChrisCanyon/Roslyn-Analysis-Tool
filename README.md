@@ -2,8 +2,6 @@
 
 A Roslyn-powered static analysis tool that inspects and visualizes dependency injection usage in .NET applications — with a focus on detecting **lifestyle mismatches**, **unused registrations**, and **risky dependency chains**.
 
-![Graphviz output example](docs/example-graph.png)
-
 ---
 
 ## 🔍 What It Does
