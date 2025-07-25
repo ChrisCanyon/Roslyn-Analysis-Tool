@@ -1,4 +1,5 @@
 ﻿using DependencyAnalyzer;
+using DependencyAnalyzer.RegistrationParsers;
 using DependencyAnalyzer.Visualizers;
 using System.Diagnostics;
 
@@ -6,7 +7,7 @@ var stopwatch = Stopwatch.StartNew(); // Start the timer
 
 var solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer(
                             "C:\\TylerDev\\onlineservices\\Source\\InSite.sln",
-                            new RegistrationHelper() //Replace with implementation that can read your projects registration pattern
+                            new WindsorRegistrationParser() //Replace with implementation that can read your projects registration pattern
                             );
 
 var dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);

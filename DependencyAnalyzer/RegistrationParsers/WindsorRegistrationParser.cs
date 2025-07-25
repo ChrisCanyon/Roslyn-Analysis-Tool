@@ -2,9 +2,9 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace DependencyAnalyzer
+namespace DependencyAnalyzer.RegistrationParsers
 {
-    class RegistrationHelper : IRegistrationHelper
+    class WindsorRegistrationParser : IRegistrationParser
     {
         public async Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution)
         {
@@ -16,12 +16,12 @@ namespace DependencyAnalyzer
             {
                 if (project.Name.ToLower().Contains("test")) continue;
                 //no async for debug
-                #if DEBUG
+            #if DEBUG
                 var projectRegistrations = await GetRegistrationsFromProjectAsync(project, solution);
                 ret.AddRange(projectRegistrations);
-                #else
+            #else
                 registrationTasks.Add(GetRegistrationsFromProjectAsync(project, solution));
-                #endif
+            #endif
             }
 
             await Task.WhenAll(registrationTasks.ToArray());

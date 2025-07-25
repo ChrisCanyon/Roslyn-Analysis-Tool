@@ -2,7 +2,7 @@
 
 namespace DependencyAnalyzer.Interfaces
 {
-    public interface IRegistrationHelper
+    public interface IRegistrationParser
     {
         public Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution);
     }

@@ -12,7 +12,7 @@ namespace DependencyAnalyzer
         public List<INamedTypeSymbol> AllTypes { get; private set; }
         public List<RegistrationInfo> RegistrationInfos { get; private set; }
 
-        public static async Task<SolutionAnalyzer> BuildSolutionAnalyzer(string solutionPath, IRegistrationHelper regirationHelper)
+        public static async Task<SolutionAnalyzer> BuildSolutionAnalyzer(string solutionPath, IRegistrationParser regirationHelper)
         {
             MSBuildLocator.RegisterDefaults();
             using var workspace = MSBuildWorkspace.Create();
