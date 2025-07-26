@@ -4,6 +4,19 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DependencyAnalyzer.RegistrationParsers
 {
+    /// <summary>
+    /// Parses and extracts registration information from Windsor container usage within a project.
+    /// Focuses on identifying calls to <c>IWindsorContainer.Register(...)</c> and related installer usage.
+    /// </summary>
+    /// <remarks>
+    /// Limitations:
+    /// - Only detects direct <c>.Register(...)</c> calls on IWindsorContainer instances.
+    /// - Installer analysis is limited to explicitly constructed installers passed to <c>.Install(...)</c>.
+    /// - Does not currently analyze method bodies of installers or follow nested <c>.Install(...)</c> calls (i.e., no cascading installer resolution).
+    /// - Does not infer runtime registration via factories, loops, or external assemblies.
+    ///
+    /// Intended for static analysis and graph generation, not for runtime fidelity.
+    /// </remarks>
     class WindsorRegistrationParser : IRegistrationParser
     {
         public async Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution)
@@ -49,17 +62,11 @@ namespace DependencyAnalyzer.RegistrationParsers
                 if (root == null || model == null) continue;
 
                 // Find all method invocation expressions in this file (e.g., container.Register(...))
-                var invocations = root.DescendantNodes()
-                    .OfType<InvocationExpressionSyntax>()
-                    .Where(inv =>
-                        inv.Expression is MemberAccessExpressionSyntax memberAccess &&
-                        memberAccess.Name.Identifier.Text == "Register" &&
-                        inv.ToString().Contains("Component.For"))
-                    .ToList();
+                var invocations = FindWindsorRegisterInvocations(root, model);
 
-                INamedTypeSymbol? currentInstallerSymbol = FindInstallerInDocument(model, root);
-                List<string> calledProjects = [];
-                if (currentInstallerSymbol != null) calledProjects = await GetInstallerReferencesAsync(solution, currentInstallerSymbol);
+                var currentInstallerSymbols = FindWindsorInstallerSymbol(model, root);
+                IEnumerable<string> calledProjects = [];
+                if (currentInstallerSymbols.Count() > 0) calledProjects = await FindInstallerReferencesAsync(solution, currentInstallerSymbols);
 
                 foreach (var invocation in invocations)
                 {
@@ -67,7 +74,7 @@ namespace DependencyAnalyzer.RegistrationParsers
                     var registration = ParseRegistration(invocation, model, project.Name);
 
                     //Clean up installer junk
-                    if (currentInstallerSymbol != null && calledProjects.Count > 0)
+                    if (currentInstallerSymbols.Any() && calledProjects.Any())
                     {
                         registration = registration.SelectMany(incompleteRegistration =>
                                                         calledProjects.Select(project =>
@@ -88,57 +95,83 @@ namespace DependencyAnalyzer.RegistrationParsers
             return registrations;
         }
 
-        private INamedTypeSymbol? FindInstallerInDocument(SemanticModel model, SyntaxNode root)
+        private IEnumerable<InvocationExpressionSyntax> FindWindsorRegisterInvocations(SyntaxNode root, SemanticModel model)
         {
-            var classDecl = root.DescendantNodes().OfType<ClassDeclarationSyntax>().FirstOrDefault();
-            if (classDecl == null) return null;
+            return root.DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Where(invocation =>
+                {
+                    if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return false;
+                    if (memberAccess.Name.Identifier.Text != "Register") return false;
 
-            var symbol = model.GetDeclaredSymbol(classDecl) as INamedTypeSymbol;
-            if (symbol == null) return null;
+                    var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                    if (symbol == null) return false;
 
-            return symbol.AllInterfaces.Any(i => i.Name == "IWindsorInstaller") ? symbol : null;
+                    return symbol.ContainingType.AllInterfaces
+                        .Any(i => i.ToDisplayString() == "Castle.Windsor.IWindsorContainer");
+                });
         }
 
-        private async Task<List<string>> GetInstallerReferencesAsync(Solution solution, INamedTypeSymbol installerSymbol)
+        private static IEnumerable<INamedTypeSymbol> FindWindsorInstallerSymbol(SemanticModel model, SyntaxNode root)
         {
-            var result = new List<string>();
-            var installerName = installerSymbol.Name;
+            return root.DescendantNodes()
+               .OfType<ClassDeclarationSyntax>()
+               .Select(classDecl => model.GetDeclaredSymbol(classDecl))
+               .OfType<INamedTypeSymbol>()
+               .Where(symbol =>
+                   symbol is not null &&
+                   symbol.AllInterfaces.Any(i => i.ToDisplayString() == "Castle.Windsor.Installer.IWindsorInstaller"));
+        }
+        
+        //TODO cache results
+        private static IEnumerable<InvocationExpressionSyntax> FindWindsorInstallInvocations(SyntaxNode root, SemanticModel model)
+        {
+            return root.DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Where(invocation =>
+                {
+                    if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return false;
+                    if (memberAccess.Name.Identifier.Text != "Install") return false;
 
-            var comparer = new FullyQualifiedNameComparer();
+                    var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                    if (symbol is null) return false;
+
+                    return symbol.ContainingType.AllInterfaces
+                        .Any(i => i.ToDisplayString() == "Castle.Windsor.IWindsorContainer");
+                });
+        }
+
+        private async Task<IEnumerable<string>> FindInstallerReferencesAsync(Solution solution, IEnumerable<INamedTypeSymbol> installerSymbols)
+        {
+            var result = new HashSet<string>();
+            var comparer = SymbolEqualityComparer.Default;
+
             foreach (var project in solution.Projects)
             {
                 foreach (var document in project.Documents)
                 {
                     var root = await document.GetSyntaxRootAsync();
                     var model = await document.GetSemanticModelAsync();
-                    if (root == null || model == null) continue;
+                    if (root is null || model is null) continue;
 
-                    var installCalls = root.DescendantNodes()
-                        .OfType<InvocationExpressionSyntax>()
-                        .Where(inv =>
-                            inv.Expression is MemberAccessExpressionSyntax memberAccess &&
-                            memberAccess.Name.Identifier.Text == "Install")
-                        .ToList();
+                    var installInvocations = FindWindsorInstallInvocations(root, model);
 
-                    foreach (var call in installCalls)
+                    foreach (var installInvocation in installInvocations)
                     {
-                        var argumentTypes = call.ArgumentList.Arguments
+                        var argSymbols = installInvocation.ArgumentList.Arguments
                             .Select(arg => model.GetTypeInfo(arg.Expression).Type)
                             .OfType<INamedTypeSymbol>();
 
-                        foreach (var argSymbol in argumentTypes)
+                        if (argSymbols.Any(arg => installerSymbols.Any(installer => comparer.Equals(arg, installer))))
                         {
-                            if (comparer.Equals(argSymbol, installerSymbol))
-                            {
-                                result.Add(project.Name);
-                                break; // No need to check other args in this call
-                            }
+                            result.Add(project.Name);
+                            break;
                         }
                     }
                 }
             }
 
-            return result.Distinct().ToList();
+            return result;
         }
 
         private List<RegistrationInfo> ParseRegistration(InvocationExpressionSyntax invocation, SemanticModel model, string projectName)
