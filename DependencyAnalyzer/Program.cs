@@ -22,8 +22,10 @@ var comparer = new FullyQualifiedNameComparer();
 
 //var n = graph.Values.First(n => n.ClassName == "Core.InSite.SiteContext");
 //var n = graph.Values.First(n => n.ClassName == "Core.Services.IEmailService");
-var n = graph.Values.First(n => n.ClassName == "InSite.Bll.AutoPayManager");
+//var n = graph.Values.First(n => n.ClassName == "InSite.Bll.AutoPayManager");
 //var n = graph.Values.First(n => n.ClassName == "Core.Clients.IConduitConnectionFactory");
+//var n = graph.Values.First(n => n.ClassName == "Infrastructure.Incode.InvisionGateway.UtilityBilling.AutopayBillRefresher");
+var n = graph.Values.First(n => n.ClassName == "InSiteMVC.Areas.EasyPay.Managers.FormsManager");
 
 foreach (var entry in n.RegistrationInfo.Take(1))
 {

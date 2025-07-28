@@ -397,7 +397,7 @@ namespace DependencyAnalyzer.RegistrationParsers
                         ret.AddRange(GetRegistrationForInterface(model, expression, symbol, lifestyle, projectName));
                         break;
                     case TypeKind.Class:
-                        ret.Add(GetRegistrationForConcreteClass(symbol, lifestyle, projectName));
+                        ret.Add(GetRegistrationForConcreteClass(model, expression, symbol, lifestyle, projectName));
                         break;
                     default:
                         Console.WriteLine("Found non class/interface argument for Component.For TypeArgumentList");
@@ -474,7 +474,8 @@ namespace DependencyAnalyzer.RegistrationParsers
                     Implementation = null,
                     RegistrationType = regType,
                     ProjectName = projectName,
-                    UnresolvableImplementation = true
+                    UnresolvableImplementation = true,
+                    IsFactoryResolved = implStrat.ImplStratType == ImplementationStrategyType.Factory
                 });
                 return ret;
             }
@@ -492,7 +493,8 @@ namespace DependencyAnalyzer.RegistrationParsers
                     Interface = registeredInterface,
                     Implementation = impType,
                     RegistrationType = regType,
-                    ProjectName = projectName
+                    ProjectName = projectName,
+                    IsFactoryResolved = implStrat.ImplStratType == ImplementationStrategyType.Factory
                 });
             }
 
@@ -500,14 +502,16 @@ namespace DependencyAnalyzer.RegistrationParsers
         }
 
         //todo maybe care about if this is implemented by something for some ungodly reason
-        private RegistrationInfo GetRegistrationForConcreteClass(INamedTypeSymbol registeredClass, LifetimeTypes regType, string projectName)
+        private RegistrationInfo GetRegistrationForConcreteClass(SemanticModel model, ExpressionSyntax expression, INamedTypeSymbol registeredClass, LifetimeTypes regType, string projectName)
         {
+            var implStrat = GetImplementationStrategy(expression, model);
             return new RegistrationInfo
             {
                 Interface = null,
                 Implementation = registeredClass,
                 RegistrationType = regType,
-                ProjectName = projectName
+                ProjectName = projectName,
+                IsFactoryResolved = implStrat.ImplStratType == ImplementationStrategyType.Factory
             };
         }
 

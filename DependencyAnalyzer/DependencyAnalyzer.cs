@@ -71,7 +71,6 @@ namespace DependencyAnalyzer
                 {
                     Class = symbol,
                     ClassName = symbol.ToDisplayString(),                   // Fully qualified type name
-                    ProjectName = symbol.ContainingAssembly.Name,           // Approximate project name
                     RegistrationInfo = SolutionAnalyzer.GetRegistrationsForSymbol(symbol)
                 };
 

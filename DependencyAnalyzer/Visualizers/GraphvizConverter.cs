@@ -15,7 +15,7 @@ namespace DependencyAnalyzer.Visualizers
             var dotPath = Path.Combine(basePath, $"{project}-Full.dot");
             var svgPath = Path.Combine(basePath, $"{project}-Full.svg");
 
-            File.WriteAllText(dotPath, GetGraphvizStringForProject(graph, project));
+            File.WriteAllText(dotPath, GetGraphvizStringForEntireProject(graph, project));
 
             GenerateSvg(dotPath, svgPath);
         }
@@ -96,23 +96,32 @@ namespace DependencyAnalyzer.Visualizers
 
             var currentPath = new Stack<INamedTypeSymbol>();
             var rootLifetime = startNode.RegistrationInfo[project].RegistrationType;
-            TraverseConsumerGraph(startNode, project, rootLifetime, currentPath, sb);
+            var visited = new List<DependencyNode>();
+            TraverseConsumerGraph(startNode, project, rootLifetime, currentPath, visited, sb);
 
             sb.AppendLine("}");
             return sb.ToString();
         }
 
-        private static void TraverseConsumerGraph(DependencyNode node, string project, LifetimeTypes rootLifetime, Stack<INamedTypeSymbol> path, StringBuilder sb)
+        private static void TraverseConsumerGraph(DependencyNode node, string project, LifetimeTypes rootLifetime, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb)
         {
             if (!node.RegistrationInfo.TryGetValue(project, out var registration)) return;
-            if (path.Contains(node.Class, SymbolEqualityComparer.Default)) return;
+            if (path.Contains(node.Class, new FullyQualifiedNameComparer()))
+            {
+                Console.WriteLine($"Cycle detected:\n\t" +
+                    $"{String.Join(" ->", path.Select(x => x.Name))} -> {node.Class.Name}");
+                return;
+            }
+            if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
+
+            visitedNodes.Add(node);
             path.Push(node.Class);
 
             CreateNode(sb, node.ClassName, registration.RegistrationType);
 
             foreach (var dependant in node.DependedOnBy)
             {
-                TraverseConsumerGraph(dependant, project, rootLifetime, path, sb);
+                TraverseConsumerGraph(dependant, project, rootLifetime, path, visitedNodes, sb);
             }
 
             foreach (var dependant in node.DependedOnBy)
@@ -143,14 +152,16 @@ namespace DependencyAnalyzer.Visualizers
 
             var currentPath = new Stack<INamedTypeSymbol>();
             var rootLifetime = startNode.RegistrationInfo[project].RegistrationType;
-            TraverseConsumerGraph(startNode, project, rootLifetime, currentPath, sb);
-            TraverseDependencyGraph(startNode, project, rootLifetime, currentPath, sb);
+            var visited = new List<DependencyNode>();
+            TraverseConsumerGraph(startNode, project, rootLifetime, currentPath, visited, sb);
+            visited = new List<DependencyNode>();
+            TraverseDependencyGraph(startNode, project, rootLifetime, currentPath, visited, sb);
 
             sb.AppendLine("}");
             return sb.ToString();
         }
 
-        private static string GetGraphvizStringForProject(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
+        private static string GetGraphvizStringForEntireProject(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
         {
             var sb = new StringBuilder();
 
@@ -182,12 +193,20 @@ namespace DependencyAnalyzer.Visualizers
                 if (!dependency.RegistrationInfo.TryGetValue(project, out var dependencyReg))
                 {
                     //Dependency was not registered for project. this is a runtime error probably
-
-                    //create node and edge
-                    var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
-                    CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
-                    label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
-                    CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                    if (registration.IsFactoryResolved)
+                    {
+                        var color = "\"#808080\"";
+                        CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
+                        label = $"[label=\"WARNING NOT REGISTERED\\nFactory\", color={color}, fontcolor={color}]";
+                        CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                    }
+                    else
+                    {
+                        var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
+                        CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
+                        label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
+                        CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                    }
                     continue;
                 }
 
@@ -214,7 +233,8 @@ namespace DependencyAnalyzer.Visualizers
 
             var currentPath = new Stack<INamedTypeSymbol>();
             var rootLifetime = startNode.RegistrationInfo[project].RegistrationType;
-            TraverseDependencyGraph(startNode, project, rootLifetime, currentPath, sb);
+            var visited = new List<DependencyNode>();
+            TraverseDependencyGraph(startNode, project, rootLifetime, currentPath, visited, sb);
 
             sb.AppendLine("}");
             return sb.ToString();
@@ -257,9 +277,17 @@ namespace DependencyAnalyzer.Visualizers
             return depInterfaces.Concat(relevantImplementations).ToList();
         }
 
-        private static void TraverseDependencyGraph(DependencyNode node, string project, LifetimeTypes rootLifetime, Stack<INamedTypeSymbol> path, StringBuilder sb, bool ambiguousRegistrationSubDependency = false)
+        private static void TraverseDependencyGraph(DependencyNode node, string project, LifetimeTypes rootLifetime, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb, bool ambiguousRegistrationSubDependency = false)
         {
-            if (path.Contains(node.Class, SymbolEqualityComparer.Default)) return;
+            if (path.Contains(node.Class, new FullyQualifiedNameComparer()))
+            {
+                Console.WriteLine($"Cycle detected:\n\t" +
+                    $"{String.Join(" -> ", path.Select(x => x.Name))} -> {node.Class.Name}");
+                return;
+            }
+            if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
+
+            visitedNodes.Add(node);
             path.Push(node.Class);
 
             if (!node.RegistrationInfo.TryGetValue(project, out var projectRegistration))
@@ -272,7 +300,7 @@ namespace DependencyAnalyzer.Visualizers
 
             foreach (var dependency in node.DependsOn)
             {
-                TraverseDependencyGraph(dependency, project, rootLifetime, path, sb, ambiguousRegistrationSubDependency);
+                TraverseDependencyGraph(dependency, project, rootLifetime, path, visitedNodes, sb, ambiguousRegistrationSubDependency);
             }
 
             ambiguousRegistrationSubDependency = ambiguousRegistrationSubDependency || projectRegistration.UnresolvableImplementation;
@@ -289,18 +317,20 @@ namespace DependencyAnalyzer.Visualizers
                     // (e.g., a factory returning an unknown type), this missing registration might be acceptable.
                     if (!ambiguousRegistrationSubDependency)
                     {
-                        //dependency not registered create node and edge because it was skipped
-                        var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
-                        CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
-                        label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
-                        CreateEdge(sb, node.ClassName, dependency.ClassName, label);
-                    }
-                    else
-                    {
-                        var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
-                        CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
-                        label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
-                        CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                        if (projectRegistration.IsFactoryResolved)
+                        {
+                            var color = "\"#808080\"";
+                            CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
+                            label = $"[label=\"WARNING NOT REGISTERED\\nFactory\", color={color}, fontcolor={color}]";
+                            CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                        }
+                        else
+                        {
+                            var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
+                            CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
+                            label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
+                            CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                        }
                     }
 
                     continue;

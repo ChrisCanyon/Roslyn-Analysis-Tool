@@ -28,12 +28,14 @@ namespace DependencyAnalyzer.Visualizers
             bool ambiguousRegistrationSubDependency = false)
         {
             string marker = prefix == "" ? "" : isLast ? "└─ " : "├─ ";
-            var cycle = path.Contains(node.Class, SymbolEqualityComparer.Default) ? " ↩ (cycle)" : "";
+            var cycle = path.Contains(node.Class, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
 
             if (!node.RegistrationInfo.TryGetValue(project, out var projectRegistration))
             {
-                //Dependency was not registered for project. this is a runtime error probably
-                //If parent tree contains factory method this might not be issue
+                // This dependency was not registered for this project.
+                // In most cases, this is likely a runtime resolution failure.
+                // However, if this node is part of a registration with an unresolvable implementation
+                // (e.g., a factory returning an unknown type), this missing registration might be acceptable.
                 if (!ambiguousRegistrationSubDependency)
                 {
                     var warn = "[WARN] NOT REGISTERED IN PROJECT";
@@ -59,7 +61,8 @@ namespace DependencyAnalyzer.Visualizers
             } 
 
             var implementationNote = projectRegistration.UnresolvableImplementation ? " [Ambiguous]" : "";
-            sb.Append($"{prefix}{marker}{node.ClassName}{cycle}{implementationNote}", consoleColor);
+            var factoryNote = projectRegistration.IsFactoryResolved ? " [Factory Resolved]" : "";
+            sb.Append($"{prefix}{marker}{node.ClassName}{cycle}{factoryNote}{implementationNote}", consoleColor);
             var lifestyleText = $" [{projectRegistration.RegistrationType}]";
             sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.RegistrationType));
 
@@ -101,7 +104,7 @@ namespace DependencyAnalyzer.Visualizers
             }
 
             string marker = prefix == "" ? "" : isLast ? "╘═ " : "╞═ ";
-            var cycle = path.Contains(node.Class, SymbolEqualityComparer.Default) ? " ↩ (cycle)" : "";
+            var cycle = path.Contains(node.Class, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
             sb.Append($"{prefix}{marker}{node.ClassName}{cycle}", consoleColor);
             var lifestyleText = $" [{projectRegistration.RegistrationType}]";
             sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.RegistrationType));
