@@ -3,6 +3,8 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using DependencyAnalyzer.Interfaces;
+using System.Collections.Generic;
+using System.Globalization;
 
 namespace DependencyAnalyzer
 {
@@ -28,10 +30,64 @@ namespace DependencyAnalyzer
             return new SolutionAnalyzer(s, allTypes, registrationInfos);
         }
 
+        public static bool IsController(INamedTypeSymbol symbol)
+        {
+            if (symbol == null) return false;
+
+            // Check interface implementation (Classic ASP.NET MVC or Web API)
+            if (symbol.AllInterfaces.Any(i =>
+                i.ToDisplayString() == "System.Web.Mvc.IController" ||
+                i.ToDisplayString() == "System.Web.Http.Controllers.IHttpController"))
+                return true;
+
+            // Check class name
+            if (symbol.Name.EndsWith("Controller", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Check base types for Controller or ControllerBase
+            for (var baseType = symbol.BaseType; baseType != null; baseType = baseType.BaseType)
+            {
+                var baseName = baseType.ToDisplayString();
+                if (baseName == "Microsoft.AspNetCore.Mvc.Controller" ||
+                    baseName == "Microsoft.AspNetCore.Mvc.ControllerBase" ||
+                    baseName == "System.Web.Mvc.Controller" ||
+                    baseName == "System.Web.Http.ApiController")
+                    return true;
+            }
+
+            // Check for [ApiController] or [Controller] attribute
+            if (symbol.GetAttributes().Any(attr =>
+            {
+                var attrName = attr.AttributeClass?.ToDisplayString();
+                return attrName == "Microsoft.AspNetCore.Mvc.ApiControllerAttribute" ||
+                       attrName == "Microsoft.AspNetCore.Mvc.ControllerAttribute";
+            }))
+                return true;
+
+            return false;
+        }
+
         public Dictionary<string, RegistrationInfo> GetRegistrationsForSymbol(INamedTypeSymbol symbol)
         {
             var ret = new Dictionary<string, RegistrationInfo>();
             var comparer = new FullyQualifiedNameComparer();
+
+            //if controller pretend its transient
+            if (IsController(symbol))
+            {
+                var projectName = symbol.ContainingAssembly?.Name ?? string.Empty;
+                if (projectName == string.Empty) return ret;
+
+                ret.TryAdd(projectName, new RegistrationInfo
+                {
+                    Interface = null,
+                    Implementation = symbol,
+                    Lifetime = LifetimeTypes.Controller,
+                    ProjectName = projectName
+                });
+                return ret;
+            }
+
 
             var relatedRegistrations = new List<RegistrationInfo>();
 
@@ -53,7 +109,6 @@ namespace DependencyAnalyzer
                         )).ToList();
             }
 
-
             foreach (var registration in relatedRegistrations)
             {
                 //I think i need to add the implementation to the factory method here
@@ -64,7 +119,7 @@ namespace DependencyAnalyzer
                     {
                         Interface = registration.Interface,
                         Implementation = symbol,
-                        RegistrationType = registration.RegistrationType,
+                        Lifetime = registration.Lifetime,
                         ProjectName = registration.ProjectName,
                     };
                     ret.TryAdd(registration.ProjectName, completeRegistration);

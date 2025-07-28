@@ -25,11 +25,11 @@ namespace DependencyAnalyzer
                     {
                         if (!dependantReference.RegistrationInfo.TryGetValue(project, out var dependantRegistration)) continue;
 
-                        if (dependantRegistration.RegistrationType > registration.RegistrationType)
+                        if (dependantRegistration.Lifetime > registration.Lifetime)
                         {
-                            var errorMessage = ($"\t[{dependantRegistration.RegistrationType}] {dependantReference.ClassName} -> [{registration.RegistrationType}] {node.ClassName}\n");
-                            errorMessage += ($"\t\tClass: {dependantReference.ClassName} has lifetime of {dependantRegistration.RegistrationType}\n");
-                            errorMessage += ($"\t\tbut references shorter lived class: {node.ClassName} with lifetime {registration.RegistrationType}");
+                            var errorMessage = ($"\t[{dependantRegistration.Lifetime}] {dependantReference.ClassName} -> [{registration.Lifetime}] {node.ClassName}\n");
+                            errorMessage += ($"\t\tClass: {dependantReference.ClassName} has lifetime of {dependantRegistration.Lifetime}\n");
+                            errorMessage += ($"\t\tbut references shorter lived class: {node.ClassName} with lifetime {registration.Lifetime}");
                             issues.Add(new DependencyMismatch()
                             {
                                 Project = project,

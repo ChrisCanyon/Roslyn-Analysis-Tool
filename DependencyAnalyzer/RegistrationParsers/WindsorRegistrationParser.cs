@@ -113,7 +113,7 @@ namespace DependencyAnalyzer.RegistrationParsers
                                             {
                                                 Interface = incompleteRegistration.Interface,
                                                 Implementation = incompleteRegistration.Implementation,
-                                                RegistrationType = incompleteRegistration.RegistrationType,
+                                                Lifetime = incompleteRegistration.Lifetime,
                                                 ProjectName = project
                                             }
                                         ));
@@ -478,7 +478,7 @@ namespace DependencyAnalyzer.RegistrationParsers
                 {
                     Interface = registeredInterface,
                     Implementation = null,
-                    RegistrationType = regType,
+                    Lifetime = regType,
                     ProjectName = projectName,
                     UnresolvableImplementation = true,
                     IsFactoryResolved = implStrat.ImplStratType == ImplementationStrategyType.Factory
@@ -498,7 +498,7 @@ namespace DependencyAnalyzer.RegistrationParsers
                 {
                     Interface = registeredInterface,
                     Implementation = impType,
-                    RegistrationType = regType,
+                    Lifetime = regType,
                     ProjectName = projectName,
                     IsFactoryResolved = implStrat.ImplStratType == ImplementationStrategyType.Factory
                 });
@@ -515,7 +515,7 @@ namespace DependencyAnalyzer.RegistrationParsers
             {
                 Interface = null,
                 Implementation = registeredClass,
-                RegistrationType = regType,
+                Lifetime = regType,
                 ProjectName = projectName,
                 IsFactoryResolved = implStrat.ImplStratType == ImplementationStrategyType.Factory
             };

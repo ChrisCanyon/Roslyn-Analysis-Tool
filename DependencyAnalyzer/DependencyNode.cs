@@ -3,8 +3,11 @@ using System.Text.Json.Serialization;
 
 namespace DependencyAnalyzer
 {
+    //there are ordered by shortest to longest lived
+    //a simple > or < comparison tells you if you are longer or shorter lived
     public enum LifetimeTypes
     {
+        Controller,
         Transient,
         PerWebRequest,
         Singleton,
@@ -16,7 +19,7 @@ namespace DependencyAnalyzer
         public INamedTypeSymbol? Implementation { get; set; } 
         public INamedTypeSymbol? Interface { get; set; }
         public required string ProjectName { get; set; }
-        public LifetimeTypes RegistrationType { get; set; }
+        public LifetimeTypes Lifetime { get; set; }
         public bool IsFactoryResolved { get; set; } = false;
         //if this is true we assume ANY implementation of the interface is valid
         public bool UnresolvableImplementation { get; set; } = false;
@@ -26,7 +29,7 @@ namespace DependencyAnalyzer
             return
                 $"- Project: {ProjectName}\n" +
                 $"  Interface: {interfaceName}\n" +
-                $"  Lifetime: {RegistrationType}";
+                $"  Lifetime: {Lifetime}";
         }
     }
 

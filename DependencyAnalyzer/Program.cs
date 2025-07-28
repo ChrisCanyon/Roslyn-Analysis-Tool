@@ -35,6 +35,7 @@ foreach (var entry in n.RegistrationInfo.Take(1))
     GraphvizConverter.CreateDependencyGraphvizForProject(n, entry.Value.ProjectName);
     GraphvizConverter.CreateGraphvizForProjectNode(n, entry.Value.ProjectName);
     GraphvizConverter.CreateFullGraphvizForProject(graph, entry.Value.ProjectName);
+    GraphvizConverter.CreateControllerGraphvizForProject(graph, entry.Value.ProjectName);
 }
 //Console.WriteLine(n.PrintRegistrations());
 

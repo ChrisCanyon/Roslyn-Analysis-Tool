@@ -1,5 +1,4 @@
-﻿using Microsoft.Build.Evaluation;
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using System.Diagnostics;
 using System.Text;
 
@@ -7,6 +6,20 @@ namespace DependencyAnalyzer.Visualizers
 {
     public static class GraphvizConverter
     {
+        public static void CreateControllerGraphvizForProject(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
+        {
+            var basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
+            basePath = Path.Combine(basePath, "output");
+
+            var dotPath = Path.Combine(basePath, $"{project}-Controllers.dot");
+            var svgPath = Path.Combine(basePath, $"{project}-Controllers.svg");
+
+            File.WriteAllText(dotPath, GetGraphvizStringForEntireProject(graph, project));
+
+            GenerateSvg(dotPath, svgPath);
+        }
+
+
         public static void CreateFullGraphvizForProject(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
         {
             var basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
@@ -87,15 +100,17 @@ namespace DependencyAnalyzer.Visualizers
             }
         }
 
+       
+
         private static string GetConsumerGraphvizString(DependencyNode startNode, string project)
         {
             var sb = new StringBuilder();
 
             sb.AppendLine("digraph Dependencies {");
             sb.AppendLine("\t rankdir=RL;");
-
+            CreateGraphvizLegend(sb);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].RegistrationType;
+            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             var visited = new List<DependencyNode>();
             TraverseConsumerGraph(startNode, project, rootLifetime, currentPath, visited, sb);
 
@@ -117,7 +132,7 @@ namespace DependencyAnalyzer.Visualizers
             visitedNodes.Add(node);
             path.Push(node.Class);
 
-            CreateNode(sb, node.ClassName, registration.RegistrationType);
+            CreateNode(sb, node.ClassName, registration.Lifetime);
 
             foreach (var dependant in node.DependedOnBy)
             {
@@ -128,7 +143,7 @@ namespace DependencyAnalyzer.Visualizers
             {
                 if (!dependant.RegistrationInfo.TryGetValue(project, out var dependantReg)) continue;
                 string label = "";
-                if (dependantReg.RegistrationType > rootLifetime)
+                if (dependantReg.Lifetime > rootLifetime)
                 {
                     label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
                 }
@@ -149,9 +164,9 @@ namespace DependencyAnalyzer.Visualizers
 
             sb.AppendLine("digraph Dependencies {");
             sb.AppendLine("\t rankdir=LR;");
-
+            CreateGraphvizLegend(sb);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].RegistrationType;
+            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             var visited = new List<DependencyNode>();
             TraverseConsumerGraph(startNode, project, rootLifetime, currentPath, visited, sb);
             visited = new List<DependencyNode>();
@@ -167,7 +182,7 @@ namespace DependencyAnalyzer.Visualizers
 
             sb.AppendLine("digraph Dependencies {");
             sb.AppendLine("\t rankdir=RL;");
-
+            CreateGraphvizLegend(sb);
             var projectNodes = graph.Values.Where(x => x.RegistrationInfo.ContainsKey(project));
             foreach (var node in projectNodes)
             {
@@ -185,7 +200,7 @@ namespace DependencyAnalyzer.Visualizers
             var registration = node.RegistrationInfo[project];
 
             //Create node for self
-            CreateNode(sb, node.ClassName, registration.RegistrationType);
+            CreateNode(sb, node.ClassName, registration.Lifetime);
 
             foreach (var dependency in dependencies)
             {
@@ -210,7 +225,7 @@ namespace DependencyAnalyzer.Visualizers
                     continue;
                 }
 
-                if (dependencyReg.RegistrationType < registration.RegistrationType)
+                if (dependencyReg.Lifetime < registration.Lifetime)
                 {
                     label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
                 }
@@ -230,11 +245,34 @@ namespace DependencyAnalyzer.Visualizers
 
             sb.AppendLine("digraph Dependencies {");
             sb.AppendLine("\t rankdir=LR;");
-
+            CreateGraphvizLegend(sb);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].RegistrationType;
+            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             var visited = new List<DependencyNode>();
             TraverseDependencyGraph(startNode, project, rootLifetime, currentPath, visited, sb);
+
+            sb.AppendLine("}");
+            return sb.ToString();
+        }
+
+
+        private static string GetGraphvizStringForController(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("digraph controllers {");
+            sb.AppendLine("\t rankdir=LR;");
+            CreateGraphvizLegend(sb);
+            var controllersInProject = graph.Values.Where(
+                node => node.RegistrationInfo.Any(reg => reg.Key == project && reg.Value.Lifetime == LifetimeTypes.Controller));
+
+            var rootLifetime = LifetimeTypes.Controller;
+            var visited = new List<DependencyNode>();
+            foreach (var node in controllersInProject)
+            {
+                var currentPath = new Stack<INamedTypeSymbol>();
+                TraverseDependencyGraph(node, project, rootLifetime, currentPath, visited, sb);
+            }
 
             sb.AppendLine("}");
             return sb.ToString();
@@ -296,7 +334,7 @@ namespace DependencyAnalyzer.Visualizers
                 return;
             }
             
-            CreateNode(sb, node.ClassName, projectRegistration.RegistrationType);
+            CreateNode(sb, node.ClassName, projectRegistration.Lifetime);
 
             foreach (var dependency in node.DependsOn)
             {
@@ -336,7 +374,7 @@ namespace DependencyAnalyzer.Visualizers
                     continue;
                 }
 
-                if (dependencyReg.RegistrationType < rootLifetime)
+                if (dependencyReg.Lifetime < rootLifetime)
                 {
                     label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
                 }
@@ -351,13 +389,27 @@ namespace DependencyAnalyzer.Visualizers
             path.Pop();
         }
 
+        private static void CreateGraphvizLegend(StringBuilder sb)
+        {
+            sb.AppendLine($"<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\r\n  " +
+                $"<TR><TD COLSPAN=\"2\"><B>Legend</B></TD></TR>");
+
+            foreach (var lifetime in Enum.GetValues(typeof(LifetimeTypes)).Cast<LifetimeTypes>())
+            {
+                sb.AppendLine($"<TR><TD BGCOLOR={GetBackgroundColorForLifetime(lifetime)}></TD><TD>{lifetime}</TD></TR>");
+            }
+
+            sb.AppendLine($"</TABLE>\r\n>, shape=plaintext];");
+        }
+
         private static string GetBackgroundColorForLifetime(LifetimeTypes lifetime)
         {
             return lifetime switch
             {
                 LifetimeTypes.Transient => "\"#ccffff\"",  // Light Cyan
                 LifetimeTypes.PerWebRequest => "\"#fff2cc\"",  // Light Yellow/Orange
-                LifetimeTypes.Singleton => "\"#ffcccc\"",  // Light Red
+                LifetimeTypes.Singleton => "\"#ffcccc\"",  // Light Red,
+                LifetimeTypes.Controller => "\"#9b95c9\"", //light purple
                 _ => "\"#ff00ff\""   // Default Magenta
             };
         }

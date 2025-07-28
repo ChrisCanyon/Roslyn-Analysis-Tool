@@ -10,7 +10,7 @@ namespace DependencyAnalyzer.Visualizers
             var sb = new ColoredStringBuilder();
             sb.AppendLine($"OBJECTS {startNode.ClassName} IS DEPENDENT ON FOR PROJECT {project}", ConsoleColor.Blue);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].RegistrationType;
+            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             TraverseDependencyGraph(startNode, project, rootLifetime, "", true, currentPath, sb);
             return sb;
         }
@@ -42,7 +42,7 @@ namespace DependencyAnalyzer.Visualizers
             }
 
             ConsoleColor consoleColor = ConsoleColor.Green;
-            if (projectRegistration.RegistrationType < rootLifetime)
+            if (projectRegistration.Lifetime < rootLifetime)
             {
                 consoleColor = ConsoleColor.Red;
             }
@@ -60,8 +60,8 @@ namespace DependencyAnalyzer.Visualizers
             var implementationNote = projectRegistration.UnresolvableImplementation ? " [Ambiguous]" : "";
             var factoryNote = projectRegistration.IsFactoryResolved ? " [Factory Resolved]" : "";
             sb.Append($"{prefix}{marker}{node.ClassName}{cycle}{factoryNote}{implementationNote}", consoleColor);
-            var lifestyleText = $" [{projectRegistration.RegistrationType}]";
-            sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.RegistrationType));
+            var lifestyleText = $" [{projectRegistration.Lifetime}]";
+            sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.Lifetime));
 
             if (!string.IsNullOrEmpty(cycle))
                 return;
@@ -85,7 +85,7 @@ namespace DependencyAnalyzer.Visualizers
             var sb = new ColoredStringBuilder();
             sb.AppendLine($"OBJECTS DEPENDENT ON {startNode.ClassName} FOR PROJECT {project}", ConsoleColor.Blue);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].RegistrationType;
+            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             TraverseConsumerGraph(startNode, project, rootLifetime, "", true, currentPath, sb);
             return sb;
         }
@@ -95,16 +95,20 @@ namespace DependencyAnalyzer.Visualizers
             if (!node.RegistrationInfo.TryGetValue(project, out var projectRegistration)) return;
 
             ConsoleColor consoleColor = ConsoleColor.Green;
-            if (projectRegistration.RegistrationType > rootLifetime)
+            if (projectRegistration.Lifetime > rootLifetime)
             {
                 consoleColor = ConsoleColor.Red;
+            }
+            if(projectRegistration.Lifetime == LifetimeTypes.Controller)
+            {
+                consoleColor = ConsoleColor.White;
             }
 
             string marker = prefix == "" ? "" : isLast ? "╘═ " : "╞═ ";
             var cycle = path.Contains(node.Class, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
             sb.Append($"{prefix}{marker}{node.ClassName}{cycle}", consoleColor);
-            var lifestyleText = $" [{projectRegistration.RegistrationType}]";
-            sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.RegistrationType));
+            var lifestyleText = $" [{projectRegistration.Lifetime}]";
+            sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.Lifetime));
 
             if (!string.IsNullOrEmpty(cycle))
                 return;
@@ -175,6 +179,8 @@ namespace DependencyAnalyzer.Visualizers
                     return ConsoleColor.Blue;
                 case LifetimeTypes.Singleton:
                     return ConsoleColor.DarkYellow;
+                case LifetimeTypes.Controller:
+                    return ConsoleColor.White;
                 default:
                     return ConsoleColor.DarkYellow;
             }
