@@ -1,8 +1,7 @@
 ﻿using DependencyAnalyzer.Interfaces;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Collections.Generic;
-using System.Linq.Expressions;
+using System.Reflection;
 
 namespace DependencyAnalyzer.RegistrationParsers
 {
@@ -290,84 +289,91 @@ namespace DependencyAnalyzer.RegistrationParsers
             return returnTypes.Distinct(new FullyQualifiedNameComparer());
         }
 
-        private ImplementationStrategy GetImplementationStrategy(ExpressionSyntax expression, SemanticModel model)
+        private static ImplementationStrategy GetImplementedByStrat(InvocationExpressionSyntax invocation, SemanticModel model)
         {
-            SyntaxNode current = expression;
-
-            while (true)
+            MemberAccessExpressionSyntax? memberAccess = invocation.Expression as MemberAccessExpressionSyntax;
+            if (!(memberAccess?.Name is GenericNameSyntax genericImpl) ||
+                genericImpl.TypeArgumentList.Arguments.Count != 1)
             {
-                // Skip MemberAccess nodes
-                current = current.Parent;
-                while (current is MemberAccessExpressionSyntax)
-                    current = current.Parent;
-
-                if (current is InvocationExpressionSyntax invocation &&
-                    invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+                return new ImplementationStrategy
                 {
-                    var methodName = memberAccess.Name.Identifier.Text;
+                    ImplReturnTypes = [],
+                    ImplStratType = ImplementationStrategyType.None
+                };
+            }
 
-                    if (methodName == "ImplementedBy" &&
-                        memberAccess.Name is GenericNameSyntax genericImpl &&
-                        genericImpl.TypeArgumentList.Arguments.Count == 1)
-                    {
-                        var implType = model.GetSymbolInfo(genericImpl.TypeArgumentList.Arguments[0]).Symbol as INamedTypeSymbol;
-                        if (implType != null)
-                        {
-                            return new ImplementationStrategy
-                            {
-                                ImplReturnTypes = [implType],
-                                ImplStratType = ImplementationStrategyType.ImplementedBy
-                            };
-                        }
-                        else
-                        {
-                            Console.WriteLine("could not determine implemented by return types");
-                            Console.WriteLine($"expression: {expression.Parent.Parent.ToFullString()}");
-                            return new ImplementationStrategy
-                            {
-                                ImplReturnTypes = [],
-                                ImplStratType = ImplementationStrategyType.Factory
-                            };
-                        }
-                    }
+            var implType = model.GetSymbolInfo(genericImpl.TypeArgumentList.Arguments[0]).Symbol as INamedTypeSymbol;
+            if (implType != null)
+            {
+                return new ImplementationStrategy
+                {
+                    ImplReturnTypes = [implType],
+                    ImplStratType = ImplementationStrategyType.ImplementedBy
+                };
+            }
+            else
+            {
+                Console.WriteLine("could not determine implemented by return types");
+                Console.WriteLine($"expression: {invocation.ToFullString()}");
+                return new ImplementationStrategy
+                {
+                    ImplReturnTypes = [],
+                    ImplStratType = ImplementationStrategyType.Factory
+                };
+            }
+        }
 
-                    if (methodName == "UsingFactoryMethod")
-                    {
-                        var factoryArg = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
-                        if (factoryArg != null)
-                        {
-                            IEnumerable<INamedTypeSymbol> factoryReturn = GetFactoryReturnTypes(factoryArg, model);
+        private static ImplementationStrategy GetUsingFactoryMethodStrat(InvocationExpressionSyntax invocation, SemanticModel model)
+        {
+            var factoryArg = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+            if (factoryArg != null)
+            {
+                IEnumerable<INamedTypeSymbol> factoryReturn = GetFactoryReturnTypes(factoryArg, model);
 
-                            if (factoryReturn.Any())
-                            {
-                                return new ImplementationStrategy
-                                {
-                                    ImplReturnTypes = factoryReturn,
-                                    ImplStratType = ImplementationStrategyType.Factory
-                                };
-                            }
-                            else
-                            {
-                                Console.WriteLine("could not determine factory return types");
-                                Console.WriteLine($"expression: {expression.Parent.Parent.ToFullString()}");
-                                return new ImplementationStrategy
-                                {
-                                    ImplReturnTypes = [],
-                                    ImplStratType = ImplementationStrategyType.Factory
-                                };
-                            }
-                        }
-                    }
-                    if (methodName == "Register")
+                if (factoryReturn.Any())
+                {
+                    return new ImplementationStrategy
                     {
-                        break;
-                    }
+                        ImplReturnTypes = factoryReturn,
+                        ImplStratType = ImplementationStrategyType.Factory
+                    };
                 }
-                else {
-                    break;
+                else
+                {
+                    Console.WriteLine("could not determine factory return types");
+                    Console.WriteLine($"expression: {invocation.ToFullString()}");
+                    return new ImplementationStrategy
+                    {
+                        ImplReturnTypes = [],
+                        ImplStratType = ImplementationStrategyType.Factory
+                    };
                 }
             }
 
+            return new ImplementationStrategy
+            {
+                ImplReturnTypes = [],
+                ImplStratType = ImplementationStrategyType.None
+            };
+        }
+
+
+        private ImplementationStrategy GetImplementationStrategy(ExpressionSyntax expression, SemanticModel model)
+        {
+            InvocationExpressionSyntax? invocation;
+
+            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "ImplementedBy");
+            if (invocation != null) {
+
+                return GetImplementedByStrat(invocation, model);
+            }
+
+            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "UsingFactoryMethod");
+            if(invocation != null)
+            {
+                return GetUsingFactoryMethodStrat(invocation, model);
+            }
+            
             return new ImplementationStrategy
             {
                 ImplReturnTypes = [],
@@ -515,38 +521,17 @@ namespace DependencyAnalyzer.RegistrationParsers
             };
         }
 
-        private LifetimeTypes ExtractLifestyleFromChain(SyntaxNode forInvocation)
+        private LifetimeTypes ExtractLifestyleFromChain(ExpressionSyntax expression)
         {
-            SyntaxNode current = forInvocation;
-
-            while (true)
-            {
-                current = current.Parent;
-
-                // Skip over .LifestyleXYZ member access layer
-                while (current is MemberAccessExpressionSyntax)
-                    current = current.Parent;
-
-                if (current is InvocationExpressionSyntax invocation &&
-                    invocation.Expression is MemberAccessExpressionSyntax memberAccess)
-                {
-                    var methodName = memberAccess.Name.Identifier.Text;
-
-                    if (methodName.StartsWith("Lifestyle"))
-                    {
-                        return methodName switch
-                        {
-                            "LifestyleTransient" => LifetimeTypes.Transient,
-                            "LifestyleSingleton" => LifetimeTypes.Singleton,
-                            "LifestyleScoped" or "LifestylePerWebRequest" => LifetimeTypes.PerWebRequest,
-                            _ => LifetimeTypes.Unknown // fallback if it's an unknown style
-                        };
-                    }
-                } else {
-                    break;
-                }
-
-            }
+            InvocationExpressionSyntax? invocation;
+            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "LifestyleTransient");
+            if (invocation != null) return LifetimeTypes.Transient;
+            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "LifestyleSingleton");
+            if (invocation != null) return LifetimeTypes.Singleton;
+            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "LifestyleScoped");
+            if (invocation != null) return LifetimeTypes.PerWebRequest;
+            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "LifestylePerWebRequest");
+            if (invocation != null) return LifetimeTypes.PerWebRequest;
 
             return LifetimeTypes.Singleton; // 🟢 Default if no lifestyle found
         }

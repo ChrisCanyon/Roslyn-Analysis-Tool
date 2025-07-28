@@ -1,5 +1,4 @@
-﻿using Microsoft.Build.Evaluation;
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using System.Text;
 
 namespace DependencyAnalyzer.Visualizers
@@ -15,8 +14,6 @@ namespace DependencyAnalyzer.Visualizers
             TraverseDependencyGraph(startNode, project, rootLifetime, "", true, currentPath, sb);
             return sb;
         }
-
-        
 
         private static void TraverseDependencyGraph(DependencyNode node,
             string project,
