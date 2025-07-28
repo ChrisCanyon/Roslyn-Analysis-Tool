@@ -257,7 +257,7 @@ namespace DependencyAnalyzer.Visualizers
             return depInterfaces.Concat(relevantImplementations).ToList();
         }
 
-        private static void TraverseDependencyGraph(DependencyNode node, string project, LifetimeTypes rootLifetime, Stack<INamedTypeSymbol> path, StringBuilder sb, bool factorySubDependency = false)
+        private static void TraverseDependencyGraph(DependencyNode node, string project, LifetimeTypes rootLifetime, Stack<INamedTypeSymbol> path, StringBuilder sb, bool ambiguousRegistrationSubDependency = false)
         {
             if (path.Contains(node.Class, SymbolEqualityComparer.Default)) return;
             path.Push(node.Class);
@@ -267,16 +267,15 @@ namespace DependencyAnalyzer.Visualizers
                 //Create this node and edge from the parent perspective
                 return;
             }
-
-            //TODO do something with factory stuff
-            factorySubDependency = factorySubDependency || projectRegistration.IsFactoryMethod;
-
+            
             CreateNode(sb, node.ClassName, projectRegistration.RegistrationType);
 
             foreach (var dependency in node.DependsOn)
             {
-                TraverseDependencyGraph(dependency, project, rootLifetime, path, sb, factorySubDependency);
+                TraverseDependencyGraph(dependency, project, rootLifetime, path, sb, ambiguousRegistrationSubDependency);
             }
+
+            ambiguousRegistrationSubDependency = ambiguousRegistrationSubDependency || projectRegistration.UnresolvableImplementation;
 
             var dependencies = GetReleventInterfaceAndImplementations(node.DependsOn, project);
             foreach (var dependency in dependencies)
@@ -284,11 +283,20 @@ namespace DependencyAnalyzer.Visualizers
                 string label;
                 if (!dependency.RegistrationInfo.TryGetValue(project, out var dependencyReg))
                 {
-                    //Dependency was not registered for project. this is a runtime error probably
-                    //If parent tree contains factory method this might not be issue
-                    if (!factorySubDependency)
+                    // This dependency was not registered for this project.
+                    // In most cases, this is likely a runtime resolution failure.
+                    // However, if this node is part of a registration with an unresolvable implementation
+                    // (e.g., a factory returning an unknown type), this missing registration might be acceptable.
+                    if (!ambiguousRegistrationSubDependency)
                     {
                         //dependency not registered create node and edge because it was skipped
+                        var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
+                        CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
+                        label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
+                        CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                    }
+                    else
+                    {
                         var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
                         CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
                         label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";

@@ -21,10 +21,9 @@ Console.WriteLine($"~~~ END TIMER ~~~");
 var comparer = new FullyQualifiedNameComparer();
 
 //var n = graph.Values.First(n => n.ClassName == "Core.InSite.SiteContext");
-var n = graph.Values.First(n => n.ClassName == "Core.Services.IEmailService");
-//var n = graph.Values.First(n => n.ClassName == "InSite.Bll.AutoPayManager");
-
-
+//var n = graph.Values.First(n => n.ClassName == "Core.Services.IEmailService");
+var n = graph.Values.First(n => n.ClassName == "InSite.Bll.AutoPayManager");
+//var n = graph.Values.First(n => n.ClassName == "Core.Clients.IConduitConnectionFactory");
 
 foreach (var entry in n.RegistrationInfo.Take(1))
 {

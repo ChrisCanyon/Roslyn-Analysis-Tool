@@ -1,6 +1,8 @@
 ﻿using DependencyAnalyzer.Interfaces;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Collections.Generic;
+using System.Linq.Expressions;
 
 namespace DependencyAnalyzer.RegistrationParsers
 {
@@ -63,31 +65,16 @@ namespace DependencyAnalyzer.RegistrationParsers
 
                 // Find all method invocation expressions in this file (e.g., container.Register(...))
                 var invocations = FindWindsorRegisterInvocations(root, model);
-
                 var currentInstallerSymbols = FindWindsorInstallerSymbol(model, root);
-                IEnumerable<string> calledProjects = [];
-                if (currentInstallerSymbols.Count() > 0) calledProjects = await FindInstallerReferencesAsync(solution, currentInstallerSymbols);
 
                 foreach (var invocation in invocations)
                 {
-                    // Try to parse this invocation into a structured RegistrationInfo object
-                    var registration = ParseRegistration(invocation, model, project.Name);
-
-                    //Clean up installer junk
-                    if (currentInstallerSymbols.Any() && calledProjects.Any())
+                    if (currentInstallerSymbols.Any())
                     {
-                        registration = registration.SelectMany(incompleteRegistration =>
-                                                        calledProjects.Select(project =>
-                                                        new RegistrationInfo
-                                                        {
-                                                            Interface = incompleteRegistration.Interface,
-                                                            Implementation = incompleteRegistration.Implementation,
-                                                            RegistrationType = incompleteRegistration.RegistrationType,
-                                                            ProjectName = project
-                                                        })).ToList();
+                        registrations.AddRange(await CreateRegistrationsForInstaller(invocation, currentInstallerSymbols, solution, model, project.Name));
                     }
 
-                    registrations.AddRange(registration);
+                    registrations.AddRange(ParseRegistration(invocation, model, project.Name));
                 }
             }
 
@@ -95,7 +82,45 @@ namespace DependencyAnalyzer.RegistrationParsers
             return registrations;
         }
 
-        private IEnumerable<InvocationExpressionSyntax> FindWindsorRegisterInvocations(SyntaxNode root, SemanticModel model)
+        /// <summary>
+        /// Expands a Windsor registration into all projects that use the installer it was declared in.
+        /// </summary>
+        private async Task<IEnumerable<RegistrationInfo>> CreateRegistrationsForInstaller(
+            InvocationExpressionSyntax invocation,
+            IEnumerable<INamedTypeSymbol> installers,
+            Solution solution,
+            SemanticModel model, 
+            string project)
+        {
+            var comparer = new FullyQualifiedNameComparer();
+            var registration = ParseRegistration(invocation, model, project);
+
+            var containingClass = invocation.Ancestors()
+                    .OfType<ClassDeclarationSyntax>()
+                    .FirstOrDefault();
+            if (containingClass == null) return registration;
+
+            var containingSymbol = model.GetDeclaredSymbol(containingClass) as INamedTypeSymbol;
+            if (containingSymbol == null) return registration;
+
+            //Get the installer this invocation is part of
+            var installer = installers.FirstOrDefault(x => comparer.Equals(containingSymbol, x));
+            if (installer == null) return registration; //this should never happen
+
+            var calledProjects = await FindInstallerReferencesAsync(solution, installer);
+            return calledProjects.SelectMany(project =>
+                                            registration.Select(incompleteRegistration =>
+                                            new RegistrationInfo
+                                            {
+                                                Interface = incompleteRegistration.Interface,
+                                                Implementation = incompleteRegistration.Implementation,
+                                                RegistrationType = incompleteRegistration.RegistrationType,
+                                                ProjectName = project
+                                            }
+                                        ));
+        }
+
+        private static IEnumerable<InvocationExpressionSyntax> FindWindsorRegisterInvocations(SyntaxNode root, SemanticModel model)
         {
             return root.DescendantNodes()
                 .OfType<InvocationExpressionSyntax>()
@@ -107,6 +132,10 @@ namespace DependencyAnalyzer.RegistrationParsers
                     var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
                     if (symbol == null) return false;
 
+                    if (symbol.ContainingType.ToDisplayString() == "Castle.Windsor.IWindsorContainer")
+                        return true;
+
+                    // Wrapper/forwarder class: check implemented interfaces
                     return symbol.ContainingType.AllInterfaces
                         .Any(i => i.ToDisplayString() == "Castle.Windsor.IWindsorContainer");
                 });
@@ -122,29 +151,18 @@ namespace DependencyAnalyzer.RegistrationParsers
                    symbol is not null &&
                    symbol.AllInterfaces.Any(i => i.ToDisplayString() == "Castle.Windsor.Installer.IWindsorInstaller"));
         }
-        
-        //TODO cache results
-        private static IEnumerable<InvocationExpressionSyntax> FindWindsorInstallInvocations(SyntaxNode root, SemanticModel model)
+
+        private record InstallInvocationContext(
+            InvocationExpressionSyntax Invocation,
+            SemanticModel SemanticModel,
+            string ProjectName
+        );
+
+        private IEnumerable<InstallInvocationContext> _windsorInstallContexts;
+        private async Task<IEnumerable<InstallInvocationContext>> FindWindsorInstallInvocationContextsForSolution(Solution solution)
         {
-            return root.DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(invocation =>
-                {
-                    if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return false;
-                    if (memberAccess.Name.Identifier.Text != "Install") return false;
-
-                    var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
-                    if (symbol is null) return false;
-
-                    return symbol.ContainingType.AllInterfaces
-                        .Any(i => i.ToDisplayString() == "Castle.Windsor.IWindsorContainer");
-                });
-        }
-
-        private async Task<IEnumerable<string>> FindInstallerReferencesAsync(Solution solution, IEnumerable<INamedTypeSymbol> installerSymbols)
-        {
-            var result = new HashSet<string>();
-            var comparer = SymbolEqualityComparer.Default;
+            if(_windsorInstallContexts != null) return _windsorInstallContexts;
+            var ret = new List<InstallInvocationContext>();
 
             foreach (var project in solution.Projects)
             {
@@ -152,134 +170,338 @@ namespace DependencyAnalyzer.RegistrationParsers
                 {
                     var root = await document.GetSyntaxRootAsync();
                     var model = await document.GetSemanticModelAsync();
+
                     if (root is null || model is null) continue;
 
-                    var installInvocations = FindWindsorInstallInvocations(root, model);
-
-                    foreach (var installInvocation in installInvocations)
-                    {
-                        var argSymbols = installInvocation.ArgumentList.Arguments
-                            .Select(arg => model.GetTypeInfo(arg.Expression).Type)
-                            .OfType<INamedTypeSymbol>();
-
-                        if (argSymbols.Any(arg => installerSymbols.Any(installer => comparer.Equals(arg, installer))))
+                    ret.AddRange(root.DescendantNodes()
+                        .OfType<InvocationExpressionSyntax>()
+                        .Where(invocation =>
                         {
-                            result.Add(project.Name);
-                            break;
-                        }
-                    }
+                            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return false;
+                            if (memberAccess.Name.Identifier.Text != "Install") return false;
+
+                            var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                            if (symbol is null) return false;
+
+                            return symbol.ContainingType.AllInterfaces
+                                .Any(i => i.ToDisplayString() == "Castle.Windsor.IWindsorContainer");
+                        })
+                        .Select(invocation => new InstallInvocationContext(invocation, model, project.Name))
+                    );
+                }
+            }
+            _windsorInstallContexts = ret;
+            return _windsorInstallContexts;
+        }
+
+        private async Task<IEnumerable<string>> FindInstallerReferencesAsync(Solution solution, INamedTypeSymbol installerSymbol)
+        {
+            var result = new HashSet<string>();
+            var comparer = new FullyQualifiedNameComparer();
+            var installContexts = await FindWindsorInstallInvocationContextsForSolution(solution);
+
+            foreach (var installContext in installContexts)
+            {
+                var model = installContext.SemanticModel;
+                var invocation = installContext.Invocation;
+                var project = installContext.ProjectName;
+
+                var argSymbols = invocation.ArgumentList.Arguments
+                    .Select(arg => model.GetTypeInfo(arg.Expression).Type)
+                    .OfType<INamedTypeSymbol>();
+
+                if (argSymbols.Any(arg => comparer.Equals(arg, installerSymbol)))
+                {
+                    result.Add(project);
                 }
             }
 
             return result;
         }
 
-        private List<RegistrationInfo> ParseRegistration(InvocationExpressionSyntax invocation, SemanticModel model, string projectName)
+        private struct ImplementationStrategy
         {
-            if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
-            {
-                var fullCall = invocation.ToFullString();
-                // Try to resolve the type arguments in For<>() and ImplementedBy<>()
-                var genericTypes = invocation.DescendantNodes().OfType<GenericNameSyntax>();
-
-                var registeredSymbols = genericTypes.SelectMany(g =>
-                    g.TypeArgumentList.Arguments.Select(arg => model.GetSymbolInfo(arg).Symbol as INamedTypeSymbol))
-                    .Where(s => s != null)
-                    .Cast<INamedTypeSymbol>()
-                    .ToList();
-
-                if (registeredSymbols.Count == 0)
-                {
-                    Console.WriteLine($"Unable to find any symbols");
-                    Console.WriteLine($"~~~ START FULL CALL ~~~~");
-                    Console.WriteLine($"{invocation.ToFullString()}");
-                    Console.WriteLine($"~~~ END FULL CALL ~~~~");
-                    return new List<RegistrationInfo>();
-                }
-
-                if (fullCall.Contains("UsingFactoryMethod"))
-                {
-                    return new List<RegistrationInfo>() { GetRegistrationForFactoryMethod(registeredSymbols.First(), invocation, projectName) };
-                }
-
-                if (registeredSymbols.Count == 1)
-                {
-                    return new List<RegistrationInfo>() { GetRegistrationForImplementationOnly(registeredSymbols.First(), invocation, projectName) };
-                }
-                else if (registeredSymbols.Count > 2)
-                {
-
-                    var componentForCall = invocation
-                        .DescendantNodes()
-                        .OfType<GenericNameSyntax>()
-                        .FirstOrDefault(g =>
-                            g.Identifier.Text == "For" &&
-                            g.TypeArgumentList.Arguments.Count > 1);
-
-                    if (componentForCall != null)
-                    {
-                        var ret = new List<RegistrationInfo>
-                        {
-                            GetRegistrationForImplementationAndInterface(registeredSymbols[0], registeredSymbols[2], invocation, projectName),
-                            GetRegistrationForImplementationAndInterface(registeredSymbols[1], registeredSymbols[2], invocation, projectName)
-                        };
-                        return ret;
-                    }
-                }
-                else
-                {
-                    return new List<RegistrationInfo>() { GetRegistrationForImplementationAndInterface(registeredSymbols[0], registeredSymbols[1], invocation, projectName) };
-                }
-            }
-
-            Console.WriteLine($"Couldnt map call at all");
-            Console.WriteLine($"~~~ START FULL CALL ~~~~");
-            Console.WriteLine($"{invocation.ToFullString()}");
-            Console.WriteLine($"~~~ END FULL CALL ~~~~");
-
-            return new List<RegistrationInfo>();
+            public ImplementationStrategyType ImplStratType;
+            public IEnumerable<INamedTypeSymbol> ImplReturnTypes;
         }
 
-        private RegistrationInfo GetRegistrationForFactoryMethod(INamedTypeSymbol registeredSymbol, InvocationExpressionSyntax invocation, string projectName)
+        private enum ImplementationStrategyType
         {
-            var regType = ExtractLifestyle(invocation);
+            ImplementedBy,
+            Factory,
+            None
+        }
 
-            if (registeredSymbol.TypeKind == TypeKind.Interface)
+        private static IEnumerable<INamedTypeSymbol> GetFactoryReturnTypes(ExpressionSyntax factoryArg, SemanticModel model)
+        {
+            var returnTypes = new List<INamedTypeSymbol>();
+
+            if (factoryArg is LambdaExpressionSyntax lambda)
             {
-                return new RegistrationInfo
+                // Handle ternary: () => condition ? new A() : new B()
+                if (lambda.Body is ConditionalExpressionSyntax ternary)
                 {
-                    Interface = registeredSymbol,
-                    Implementation = null,
-                    RegistrationType = regType,
-                    ProjectName = projectName,
-                    IsFactoryMethod = true
-                };
+                    var type1 = model.GetTypeInfo(ternary.WhenTrue).Type as INamedTypeSymbol;
+                    var type2 = model.GetTypeInfo(ternary.WhenFalse).Type as INamedTypeSymbol;
+
+                    if (type1?.TypeKind == TypeKind.Class) returnTypes.Add(type1);
+                    if (type2?.TypeKind == TypeKind.Class) returnTypes.Add(type2);
+                }
+                // Handle block with multiple return statements
+                else if (lambda.Body is BlockSyntax block)
+                {
+                    var returns = block.DescendantNodes()
+                        .OfType<ReturnStatementSyntax>()
+                        .Select(r => model.GetTypeInfo(r.Expression).Type)
+                        .OfType<INamedTypeSymbol>()
+                        .Where(t => t.TypeKind == TypeKind.Class);
+
+                    returnTypes.AddRange(returns);
+                }
+                // Handle simple expression lambdas: () => new Foo()
+                else
+                {
+                    var type = model.GetTypeInfo(lambda.Body).Type as INamedTypeSymbol;
+                    if (type?.TypeKind == TypeKind.Class)
+                        returnTypes.Add(type);
+                }
+            }
+            else if (factoryArg is IdentifierNameSyntax methodRef)
+            {
+                var symbol = model.GetSymbolInfo(methodRef).Symbol;
+                if (symbol is IMethodSymbol methodSymbol &&
+                    methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() is MethodDeclarationSyntax method)
+                {
+                    var returnStatements = method.DescendantNodes()
+                        .OfType<ReturnStatementSyntax>()
+                        .Select(r => model.GetTypeInfo(r.Expression).Type)
+                        .OfType<INamedTypeSymbol>()
+                        .Where(t => t.TypeKind == TypeKind.Class);
+
+                    returnTypes.AddRange(returnStatements);
+                }
             }
             else
             {
-                return new RegistrationInfo
-                {
-                    Interface = null,
-                    Implementation = registeredSymbol,
-                    RegistrationType = regType,
-                    ProjectName = projectName,
-                    IsFactoryMethod = false //factory methods that dont implement interfaces must return the type specified
-                };
+                Console.WriteLine("UsingFactoryMethod passed non lambda or method");
+                Console.WriteLine($"expression: {factoryArg.ToFullString()}");
             }
+
+            return returnTypes.Distinct(new FullyQualifiedNameComparer());
         }
 
-        private RegistrationInfo GetRegistrationForImplementationOnly(INamedTypeSymbol registeredClass, InvocationExpressionSyntax invocation, string projectName)
+        private ImplementationStrategy GetImplementationStrategy(ExpressionSyntax expression, SemanticModel model)
         {
-            if (registeredClass.TypeKind == TypeKind.Interface)
+            SyntaxNode current = expression;
+
+            while (true)
             {
-                Console.WriteLine("GetRegistrationForImplementationOnly passed an interface");
-                Console.WriteLine($"~~~ START FULL CALL ~~~~");
-                Console.WriteLine($"{invocation.ToFullString()}");
-                Console.WriteLine($"~~~ END FULL CALL ~~~~");
+                // Skip MemberAccess nodes
+                current = current.Parent;
+                while (current is MemberAccessExpressionSyntax)
+                    current = current.Parent;
+
+                if (current is InvocationExpressionSyntax invocation &&
+                    invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+                {
+                    var methodName = memberAccess.Name.Identifier.Text;
+
+                    if (methodName == "ImplementedBy" &&
+                        memberAccess.Name is GenericNameSyntax genericImpl &&
+                        genericImpl.TypeArgumentList.Arguments.Count == 1)
+                    {
+                        var implType = model.GetSymbolInfo(genericImpl.TypeArgumentList.Arguments[0]).Symbol as INamedTypeSymbol;
+                        if (implType != null)
+                        {
+                            return new ImplementationStrategy
+                            {
+                                ImplReturnTypes = [implType],
+                                ImplStratType = ImplementationStrategyType.ImplementedBy
+                            };
+                        }
+                        else
+                        {
+                            Console.WriteLine("could not determine implemented by return types");
+                            Console.WriteLine($"expression: {expression.Parent.Parent.ToFullString()}");
+                            return new ImplementationStrategy
+                            {
+                                ImplReturnTypes = [],
+                                ImplStratType = ImplementationStrategyType.Factory
+                            };
+                        }
+                    }
+
+                    if (methodName == "UsingFactoryMethod")
+                    {
+                        var factoryArg = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+                        if (factoryArg != null)
+                        {
+                            IEnumerable<INamedTypeSymbol> factoryReturn = GetFactoryReturnTypes(factoryArg, model);
+
+                            if (factoryReturn.Any())
+                            {
+                                return new ImplementationStrategy
+                                {
+                                    ImplReturnTypes = factoryReturn,
+                                    ImplStratType = ImplementationStrategyType.Factory
+                                };
+                            }
+                            else
+                            {
+                                Console.WriteLine("could not determine factory return types");
+                                Console.WriteLine($"expression: {expression.Parent.Parent.ToFullString()}");
+                                return new ImplementationStrategy
+                                {
+                                    ImplReturnTypes = [],
+                                    ImplStratType = ImplementationStrategyType.Factory
+                                };
+                            }
+                        }
+                    }
+                    if (methodName == "Register")
+                    {
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
             }
 
-            var regType = ExtractLifestyle(invocation);
+            return new ImplementationStrategy
+            {
+                ImplReturnTypes = [],
+                ImplStratType = ImplementationStrategyType.None
+            };
+        }
 
+        private IEnumerable<RegistrationInfo> CreateRegistrationsFromComponentFor(ExpressionSyntax expression, GenericNameSyntax methodName, SemanticModel model, string projectName)
+        {
+            var lifestyle = ExtractLifestyleFromChain(expression);
+            var ret = new List<RegistrationInfo>();
+            //go through each type argument
+            foreach (var arg in methodName.TypeArgumentList.Arguments)
+            {
+                var symbol = model.GetSymbolInfo(arg).Symbol as INamedTypeSymbol;
+
+                if (symbol == null)
+                {
+                    Console.WriteLine("Non NamedTypeSymbol found in Component.For TypeArgumentList");
+                    Console.WriteLine($"expression: {expression.ToFullString()}");
+                    continue;
+                }
+
+                switch (symbol.TypeKind)
+                {
+                    case TypeKind.Interface:
+                        ret.AddRange(GetRegistrationForInterface(model, expression, symbol, lifestyle, projectName));
+                        break;
+                    case TypeKind.Class:
+                        ret.Add(GetRegistrationForConcreteClass(symbol, lifestyle, projectName));
+                        break;
+                    default:
+                        Console.WriteLine("Found non class/interface argument for Component.For TypeArgumentList");
+                        Console.WriteLine($"expression: {expression.ToFullString()}");
+                        break;
+                }
+            }
+
+            return ret;
+        }
+
+        /// <summary>
+        /// Parses a Windsor `Register` invocation to extract registration information such as:
+        /// interface, implementation, and lifestyle.
+        ///
+        /// Currently supports:
+        /// - Explicit registrations using `Component.For<T>().ImplementedBy<U>()`
+        /// - Factory method registrations via `.UsingFactoryMethod(...)`
+        /// - Instance registrations via `.Instance(...)`
+        ///
+        /// Does **not** support:
+        /// - Convention-based registrations (e.g., `Classes.FromThisAssembly()`)
+        /// - Configuration-based registrations (e.g., `FromXmlFile(...)`)
+        /// </summary>
+        private IEnumerable<RegistrationInfo> ParseRegistration(InvocationExpressionSyntax registerInvocation, SemanticModel model, string projectName)
+        {
+            var ret = new List<RegistrationInfo>();
+
+            foreach (var registrationArg in registerInvocation.ArgumentList.Arguments)
+            {
+                var argExpression = registrationArg.Expression;
+
+                // Walk down the member access chain to find the For<T> call
+                while (argExpression is InvocationExpressionSyntax methodCall &&
+                        methodCall.Expression is MemberAccessExpressionSyntax memberAccessExpr)
+                {
+                    if (memberAccessExpr.Name is GenericNameSyntax methodName &&
+                        methodName.Identifier.Text == "For" &&
+                        methodName.TypeArgumentList.Arguments.Count > 0)
+                    {
+                        // Make sure it's Castle Windsor's Component.For<T>()
+                        var symbol = model.GetSymbolInfo(memberAccessExpr.Expression).Symbol;
+
+                        if (symbol is INamedTypeSymbol typeSymbol &&
+                            typeSymbol.ToDisplayString() == "Castle.MicroKernel.Registration.Component")
+                        {
+                            ret.AddRange(CreateRegistrationsFromComponentFor(argExpression, methodName, model, projectName));
+                        }
+                    }
+                    argExpression = memberAccessExpr.Expression;
+                }
+            }
+            return ret;
+        }
+                
+        private List<RegistrationInfo> GetRegistrationForInterface(SemanticModel model, ExpressionSyntax expression, INamedTypeSymbol registeredInterface, LifetimeTypes regType, string projectName)
+        {
+            var implStrat = GetImplementationStrategy(expression, model);
+            var ret = new List<RegistrationInfo>();
+
+            if (implStrat.ImplStratType != ImplementationStrategyType.ImplementedBy &&
+                implStrat.ImplStratType != ImplementationStrategyType.Factory)
+            {
+                Console.WriteLine("No implementation strat found for interface");
+                Console.WriteLine($"expression {expression.ToFullString()}");
+                return ret;
+            }
+
+            if (!implStrat.ImplReturnTypes.Any())
+            {
+                ret.Add(new RegistrationInfo
+                {
+                    Interface = registeredInterface,
+                    Implementation = null,
+                    RegistrationType = regType,
+                    ProjectName = projectName,
+                    UnresolvableImplementation = true
+                });
+                return ret;
+            }
+
+            foreach (var impType in implStrat.ImplReturnTypes)
+            {
+                if(impType.TypeKind == TypeKind.Interface)
+                {
+                    Console.WriteLine("found interface implementing interface");
+                    Console.WriteLine($"expression {expression.ToFullString()}");
+                    continue;
+                }
+                ret.Add(new RegistrationInfo
+                {
+                    Interface = registeredInterface,
+                    Implementation = impType,
+                    RegistrationType = regType,
+                    ProjectName = projectName
+                });
+            }
+
+            return ret;
+        }
+
+        //todo maybe care about if this is implemented by something for some ungodly reason
+        private RegistrationInfo GetRegistrationForConcreteClass(INamedTypeSymbol registeredClass, LifetimeTypes regType, string projectName)
+        {
             return new RegistrationInfo
             {
                 Interface = null,
@@ -288,48 +510,41 @@ namespace DependencyAnalyzer.RegistrationParsers
                 ProjectName = projectName
             };
         }
-        private RegistrationInfo GetRegistrationForImplementationAndInterface(INamedTypeSymbol registeredInterface, INamedTypeSymbol registeredImplementation, InvocationExpressionSyntax invocation, string projectName)
+
+        private LifetimeTypes ExtractLifestyleFromChain(SyntaxNode forInvocation)
         {
-            var regType = ExtractLifestyle(invocation);
+            SyntaxNode current = forInvocation;
 
-
-            if (registeredImplementation.TypeKind == TypeKind.Interface)
+            while (true)
             {
-                Console.WriteLine("GetRegistrationForImplementationAndInterface passed an interface as implementation");
-                Console.WriteLine($"~~~ START FULL CALL ~~~~");
-                Console.WriteLine($"{invocation.ToFullString()}");
-                Console.WriteLine($"~~~ END FULL CALL ~~~~");
+                current = current.Parent;
+
+                // Skip over .LifestyleXYZ member access layer
+                while (current is MemberAccessExpressionSyntax)
+                    current = current.Parent;
+
+                if (current is InvocationExpressionSyntax invocation &&
+                    invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+                {
+                    var methodName = memberAccess.Name.Identifier.Text;
+
+                    if (methodName.StartsWith("Lifestyle"))
+                    {
+                        return methodName switch
+                        {
+                            "LifestyleTransient" => LifetimeTypes.Transient,
+                            "LifestyleSingleton" => LifetimeTypes.Singleton,
+                            "LifestyleScoped" or "LifestylePerWebRequest" => LifetimeTypes.PerWebRequest,
+                            _ => LifetimeTypes.Unknown // fallback if it's an unknown style
+                        };
+                    }
+                } else {
+                    break;
+                }
+
             }
 
-            if (registeredInterface.TypeKind == TypeKind.Class)
-            {
-                Console.WriteLine("GetRegistrationForImplementationAndInterface passed a class as interface");
-                Console.WriteLine($"~~~ START FULL CALL ~~~~");
-                Console.WriteLine($"{invocation.ToFullString()}");
-                Console.WriteLine($"~~~ END FULL CALL ~~~~");
-            }
-
-
-            return new RegistrationInfo
-            {
-                Interface = registeredInterface,
-                Implementation = registeredImplementation,
-                RegistrationType = regType,
-                ProjectName = projectName
-            };
-        }
-        private LifetimeTypes ExtractLifestyle(InvocationExpressionSyntax invocation)
-        {
-            var fullCall = invocation.ToFullString();
-
-            if (fullCall.Contains("LifestyleTransient"))
-                return LifetimeTypes.Transient;
-            if (fullCall.Contains("LifestylePerWebRequest") || fullCall.Contains("LifestyleScoped"))
-                return LifetimeTypes.PerWebRequest;
-            if (fullCall.Contains("LifestyleSingleton"))
-                return LifetimeTypes.Singleton;
-
-            return LifetimeTypes.Singleton; // Default for Castle Windsor
+            return LifetimeTypes.Singleton; // 🟢 Default if no lifestyle found
         }
     }
 }

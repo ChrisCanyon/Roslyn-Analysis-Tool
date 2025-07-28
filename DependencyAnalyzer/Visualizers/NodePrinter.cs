@@ -25,7 +25,7 @@ namespace DependencyAnalyzer.Visualizers
             bool isLast,
             Stack<INamedTypeSymbol> path,
             ColoredStringBuilder sb,
-            bool factorySubDependency = false)
+            bool ambiguousRegistrationSubDependency = false)
         {
             string marker = prefix == "" ? "" : isLast ? "└─ " : "├─ ";
             var cycle = path.Contains(node.Class, SymbolEqualityComparer.Default) ? " ↩ (cycle)" : "";
@@ -34,7 +34,7 @@ namespace DependencyAnalyzer.Visualizers
             {
                 //Dependency was not registered for project. this is a runtime error probably
                 //If parent tree contains factory method this might not be issue
-                if (!factorySubDependency)
+                if (!ambiguousRegistrationSubDependency)
                 {
                     var warn = "[WARN] NOT REGISTERED IN PROJECT";
                     sb.AppendLine($"{prefix}{marker}{node.ClassName}{cycle}{warn}", ConsoleColor.Magenta);
@@ -42,21 +42,24 @@ namespace DependencyAnalyzer.Visualizers
                 return;
             }
 
-            factorySubDependency = factorySubDependency || projectRegistration.IsFactoryMethod;
             ConsoleColor consoleColor = ConsoleColor.Green;
             if (projectRegistration.RegistrationType < rootLifetime)
             {
                 consoleColor = ConsoleColor.Red;
             }
-            //If the depedency is generated through a factory method we dont know for sure if its actually being referenced by the project
-            //TODO: figure out if i can parse factory methods
-            if (factorySubDependency)
+
+            ambiguousRegistrationSubDependency = ambiguousRegistrationSubDependency || projectRegistration.UnresolvableImplementation;
+
+            // If this is a sub-dependency of a registration with an unresolvable implementation,
+            // we can't be certain this dependency is actually used in the project.
+            // Highlight it as ambiguous (e.g., could be conditionally resolved at runtime).
+            if (ambiguousRegistrationSubDependency)
             {
                 consoleColor = ConsoleColor.Yellow;
-            }
+            } 
 
-            var factory = projectRegistration.IsFactoryMethod ? " [Factory Registration]" : "";
-            sb.Append($"{prefix}{marker}{node.ClassName}{cycle}{factory}", consoleColor);
+            var implementationNote = projectRegistration.UnresolvableImplementation ? " [Ambiguous]" : "";
+            sb.Append($"{prefix}{marker}{node.ClassName}{cycle}{implementationNote}", consoleColor);
             var lifestyleText = $" [{projectRegistration.RegistrationType}]";
             sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.RegistrationType));
 

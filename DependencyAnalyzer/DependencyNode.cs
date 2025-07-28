@@ -19,7 +19,8 @@ namespace DependencyAnalyzer
         public INamedTypeSymbol? Interface { get; set; }
         public required string ProjectName { get; set; }
         public LifetimeTypes RegistrationType { get; set; }
-        public bool IsFactoryMethod { get; set; } = false;
+        //if this is true we assume ANY implementation of the interface is valid
+        public bool UnresolvableImplementation { get; set; } = false;
         public string Print()
         {
             var interfaceName = Interface?.ToDisplayString() ?? "(none)";

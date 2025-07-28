@@ -46,9 +46,9 @@ namespace DependencyAnalyzer
                 relatedRegistrations = RegistrationInfos.Where(registration =>
                         //If this is an implementation
                         comparer.Equals(registration.Implementation, symbol) ||
-                        //Or a type that implements a factory interface
-                        (registration.IsFactoryMethod && // Dont have good parsing for factory methods.
-                            registration.Interface != null && // Assume any implementation of the interface could be registered
+                        //Or a type that implements an interface with Unresolvable Implementation (probably weird factory method)
+                        (registration.UnresolvableImplementation && 
+                            registration.Interface != null && 
                             symbol.Interfaces.Any(currentSymbolInterface => comparer.Equals(registration.Interface, currentSymbolInterface))
                         )).ToList();
             }
@@ -66,7 +66,6 @@ namespace DependencyAnalyzer
                         Implementation = symbol,
                         RegistrationType = registration.RegistrationType,
                         ProjectName = registration.ProjectName,
-                        IsFactoryMethod = registration.IsFactoryMethod
                     };
                     ret.TryAdd(registration.ProjectName, completeRegistration);
                 }
