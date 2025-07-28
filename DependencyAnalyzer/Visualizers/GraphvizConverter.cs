@@ -391,12 +391,13 @@ namespace DependencyAnalyzer.Visualizers
 
         private static void CreateGraphvizLegend(StringBuilder sb)
         {
-            sb.AppendLine($"<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\r\n  " +
-                $"<TR><TD COLSPAN=\"2\"><B>Legend</B></TD></TR>");
+            sb.AppendLine($"Legend [label=<\r\n" +
+                $"<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\r\n" +
+                $"  <TR><TD COLSPAN=\"2\"><B>Legend</B></TD></TR>");
 
             foreach (var lifetime in Enum.GetValues(typeof(LifetimeTypes)).Cast<LifetimeTypes>())
             {
-                sb.AppendLine($"<TR><TD BGCOLOR={GetBackgroundColorForLifetime(lifetime)}></TD><TD>{lifetime}</TD></TR>");
+                sb.AppendLine($"  <TR><TD BGCOLOR={GetBackgroundColorForLifetime(lifetime)}></TD><TD>{lifetime}</TD></TR>");
             }
 
             sb.AppendLine($"</TABLE>\r\n>, shape=plaintext];");
