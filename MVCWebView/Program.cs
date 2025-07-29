@@ -8,6 +8,8 @@ builder.Services.AddControllersWithViews()
     .AddRazorRuntimeCompilation();
 
 SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\onlineservices\\Source\\InSite.sln");
+//SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\onlineservices\\Source\\Prepaid\\Prepaid.sln");
+//SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\Capital\\Source\\Capital.sln");
 DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
 DependencyGraph graph = dependencyAnalyzer.BuildFullDependencyGraph();
 

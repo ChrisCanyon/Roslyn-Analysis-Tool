@@ -9,7 +9,7 @@
         <button class="btn btn-outline-secondary" onclick="loadPrevious()">&lt; Back</button>
     </div>
     <div class="d-flex align-items-center gap-2" style=" position: absolute; left: 30%; transform: translateX(-30%);">
-        <input id="classInput" class="form-control w-auto" placeholder="Core.InSite.SiteContext" />
+        <input id="classInput" class="form-control w-auto" placeholder="Namespace.ClassName" />
         <select id="projectInput" class="form-select w-auto">
             @foreach (var project in (List<string>)ViewData["ProjectList"])
             {

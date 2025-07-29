@@ -1,163 +1,277 @@
 ﻿using DependencyAnalyzer.Interfaces;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace DependencyAnalyzer.RegistrationParsers
+namespace DependencyAnalyzer.RegistrationParsers;
+
+public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
 {
-    public class MicrosoftDIRegistrationParser : IRegistrationParser
+    public async Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution)
     {
-        public async Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution)
+        var registrations = new List<RegistrationInfo>();
+        var registrationTasks = new List<Task<List<RegistrationInfo>>>();
+
+        foreach (var project in solution.Projects)
         {
-            var ret = new List<RegistrationInfo>();
+            if (project.Name.ToLower().Contains("test"))
+                continue;
 
-            var registrationTasks = new List<Task<List<RegistrationInfo>>>();
-
-            foreach (var project in solution.Projects)
-            {
-                if (project.Name.ToLower().Contains("test")) continue;
-                //no async for debug
 #if DEBUG
-                var projectRegistrations = await GetRegistrationsFromProjectAsync(project, solution);
-                ret.AddRange(projectRegistrations);
+            registrations.AddRange(await GetRegistrationsFromProjectAsync(project));
 #else
-                registrationTasks.Add(GetRegistrationsFromProjectAsync(project, solution));
+            registrationTasks.Add(GetRegistrationsFromProjectAsync(project));
 #endif
-            }
-
-            await Task.WhenAll(registrationTasks.ToArray());
-
-            foreach (var task in registrationTasks)
-            {
-                var projectRegistrations = task.Result;
-                ret.AddRange(projectRegistrations);
-            }
-
-            return ret;
         }
 
-        private async Task<List<RegistrationInfo>> GetRegistrationsFromProjectAsync(Project project, Solution solution)
+        await Task.WhenAll(registrationTasks);
+        foreach (var task in registrationTasks)
+            registrations.AddRange(task.Result);
+
+        return registrations;
+    }
+
+    private async Task<List<RegistrationInfo>> GetRegistrationsFromProjectAsync(Project project)
+    {
+        var registrations = new List<RegistrationInfo>();
+
+        foreach (var doc in project.Documents)
         {
-            var registrations = new List<RegistrationInfo>();
+            var root = await doc.GetSyntaxRootAsync();
+            var model = await doc.GetSemanticModelAsync();
+            if (root == null || model == null) continue;
 
-            foreach (var doc in project.Documents)
+            var invocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>();
+
+            foreach (var invocation in invocations)
             {
-                var root = await doc.GetSyntaxRootAsync();
-                var model = await doc.GetSemanticModelAsync();
-                if (root == null || model == null) continue;
+                var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                if (symbol == null) continue;
 
-                var invocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>();
-         
-                foreach (var invocation in invocations)
+                var methodName = symbol.Name;
+                var containingType = symbol.ContainingType.ToDisplayString();
+                var args = invocation.ArgumentList?.Arguments;
+
+                // AddDbContext<TContext>()
+                if (methodName == "AddDbContext" &&
+                    symbol.IsGenericMethod &&
+                    symbol.TypeArguments.Length == 1 &&
+                    (containingType == "Microsoft.Extensions.DependencyInjection.EntityFrameworkServiceCollectionExtensions" ||
+                     containingType == "Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions"))
                 {
-                    var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
-                    if (symbol?.ContainingType == null) continue;
-         
-                    var containingType = symbol.ContainingType.ToDisplayString();
-                    var methodName = symbol.Name;
-         
-                    if (containingType != "Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions")
-                        continue;
-                    
-                    var expression = invocation.Expression;
-
-                    GetHttpClientsAndDbContext(project, expression, model, registrations);
-
-                    LifetimeTypes? lifetime = methodName switch
+                    if (symbol.TypeArguments[0] is INamedTypeSymbol dbContextSymbol)
                     {
-                        "AddSingleton" => LifetimeTypes.Singleton,
-                        "AddScoped" => LifetimeTypes.PerWebRequest,
-                        "AddTransient" => LifetimeTypes.Transient,
-                        _ => null
-                    };
-
-                    if (lifetime == null) continue;
-
-                    INamedTypeSymbol? interfaceType = null;
-                    INamedTypeSymbol? implementationType = null;
-
-                    // Look for generic type arguments
-                    if (invocation.Expression is MemberAccessExpressionSyntax memberAccess &&
-                        memberAccess.Name is GenericNameSyntax genericName &&
-                        genericName.TypeArgumentList.Arguments.Count > 0)
-                    {
-                        var typeArgs = genericName.TypeArgumentList.Arguments;
-
-                        if (typeArgs.Count == 1)
-                        {
-                            implementationType = model.GetTypeInfo(typeArgs[0]).Type as INamedTypeSymbol;
-                        }
-                        else if (typeArgs.Count == 2)
-                        {
-                            interfaceType = model.GetTypeInfo(typeArgs[0]).Type as INamedTypeSymbol;
-                            implementationType = model.GetTypeInfo(typeArgs[1]).Type as INamedTypeSymbol;
-                        }
-                    }
-
-                    registrations.Add(new RegistrationInfo
-                    {
-                        Interface = interfaceType,
-                        Implementation = implementationType,
-                        ProjectName = project.Name,
-                        Lifetime = lifetime.Value
-                    });
-                }
-            }
-
-            return registrations;
-        }
-
-        private static void GetHttpClientsAndDbContext(Project project, ExpressionSyntax expression, SemanticModel model,
-            List<RegistrationInfo> registrations)
-        {
-            // Handle AddHttpClient<IMyInterface, MyImplementation>
-            if (expression is GenericNameSyntax genericName && genericName.Identifier.Text == "AddHttpClient")
-            {
-                var symbolInfo = model.GetSymbolInfo(genericName);
-                var methodSymbol = symbolInfo.Symbol as IMethodSymbol;
- 
-                if (methodSymbol?.ContainingNamespace.ToDisplayString().Contains("Microsoft.Extensions.DependencyInjection") == true &&
-                    genericName.TypeArgumentList.Arguments.Count == 2)
-                {
-                    var interfaceSymbol = model.GetSymbolInfo(genericName.TypeArgumentList.Arguments[0]).Symbol as INamedTypeSymbol;
-                    var implementationSymbol = model.GetSymbolInfo(genericName.TypeArgumentList.Arguments[1]).Symbol as INamedTypeSymbol;
- 
-                    registrations.Add(new RegistrationInfo
-                    {
-                        Interface = interfaceSymbol,
-                        Implementation = implementationSymbol,
-                        ProjectName = project.Name,
-                        Lifetime = LifetimeTypes.Transient,
-                        IsFactoryResolved = true
-                    });
-                }
-            }
- 
-            // Handle AddDbContext<MyDbContext>()
-            if (expression is MemberAccessExpressionSyntax memberAccess &&
-                memberAccess.Name.Identifier.Text == "AddDbContext")
-            {
-                if (memberAccess.Expression is IdentifierNameSyntax || memberAccess.Expression is MemberAccessExpressionSyntax)
-                {
-                    var symbolInfo = model.GetSymbolInfo(memberAccess);
-                    var methodSymbol = symbolInfo.Symbol as IMethodSymbol;
- 
-                    if (methodSymbol?.ContainingNamespace.ToDisplayString().Contains("Microsoft.Extensions.DependencyInjection") == true &&
-                        methodSymbol.IsGenericMethod && methodSymbol.TypeArguments.Length == 1)
-                    {
-                        var dbContextType = methodSymbol.TypeArguments[0] as INamedTypeSymbol;
- 
                         registrations.Add(new RegistrationInfo
                         {
                             Interface = null,
-                            Implementation = dbContextType,
+                            Implementation = dbContextSymbol,
                             ProjectName = project.Name,
                             Lifetime = LifetimeTypes.PerWebRequest,
                             IsFactoryResolved = true
                         });
                     }
+                    continue;
                 }
+
+                // AddX<TInterface, TImpl>(MethodGroup)
+                if ((methodName is "AddScoped" or "AddTransient" or "AddSingleton") &&
+                    symbol.IsGenericMethod &&
+                    symbol.TypeArguments.Length == 2 &&
+                    args?.Count == 1 &&
+                    args?[0].Expression is IdentifierNameSyntax methodRef)
+                {
+                    var interfaceType = symbol.TypeArguments[0] as INamedTypeSymbol;
+                    var factoryReturnTypes = GetFactoryReturnTypes(methodRef, model);
+
+                    foreach (var returnType in factoryReturnTypes)
+                    {
+                        registrations.Add(new RegistrationInfo
+                        {
+                            Interface = interfaceType,
+                            Implementation = returnType,
+                            ProjectName = project.Name,
+                            Lifetime = GetLifetime(methodName),
+                            IsFactoryResolved = true
+                        });
+                    }
+
+                    continue;
+                }
+
+                // AddX<TInterface, TImpl>() or AddX<TImpl>()
+                if (invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax genericName })
+                {
+                    var typeArgs = genericName.TypeArgumentList.Arguments;
+                    if (typeArgs.Count >= 1 && methodName is "AddScoped" or "AddTransient" or "AddSingleton")
+                    {
+                        var lifetime = GetLifetime(methodName);
+                        var interfaceType = model.GetTypeInfo(typeArgs[0]).Type as INamedTypeSymbol;
+                        var implementationType = typeArgs.Count > 1
+                            ? model.GetTypeInfo(typeArgs[1]).Type as INamedTypeSymbol
+                            : interfaceType;
+
+                        registrations.Add(new RegistrationInfo
+                        {
+                            Interface = interfaceType,
+                            Implementation = implementationType,
+                            ProjectName = project.Name,
+                            Lifetime = lifetime,
+                            IsFactoryResolved = false
+                        });
+
+                        continue;
+                    }
+                }
+            }
+
+            // Parse service registrations inside methods with IServiceCollection
+            var serviceMethods = root.DescendantNodes()
+                .OfType<MethodDeclarationSyntax>()
+                .Where(m => m.ParameterList.Parameters.Any(p =>
+                    model.GetTypeInfo(p.Type).Type?.ToDisplayString() == "Microsoft.Extensions.DependencyInjection.IServiceCollection"));
+
+            foreach (var method in serviceMethods)
+                ExtractServiceRegistrationsFromMethod(method, model, project, registrations);
+        }
+
+        return registrations;
+    }
+
+    private void ExtractServiceRegistrationsFromMethod(
+        MethodDeclarationSyntax method,
+        SemanticModel model,
+        Project project,
+        List<RegistrationInfo> registrations)
+    {
+        var serviceParams = method.ParameterList.Parameters
+            .Where(p => model.GetTypeInfo(p.Type).Type?.ToDisplayString() == "Microsoft.Extensions.DependencyInjection.IServiceCollection")
+            .Select(p => p.Identifier.Text)
+            .ToHashSet();
+
+        if (!serviceParams.Any()) return;
+
+        var invocations = method.DescendantNodes().OfType<InvocationExpressionSyntax>();
+
+        foreach (var invocation in invocations)
+        {
+            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess ||
+                memberAccess.Expression is not IdentifierNameSyntax identifier ||
+                !serviceParams.Contains(identifier.Identifier.Text))
+                continue;
+
+            var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+            if (symbol?.ContainingType == null) continue;
+
+            var methodName = symbol.Name;
+            var containingType = symbol.ContainingType.ToDisplayString();
+            var args = invocation.ArgumentList?.Arguments;
+
+            if (!containingType.Contains("DependencyInjection")) continue;
+
+            // AddHttpClient<TInterface, TImpl>
+            TryAddHttpClient(project, memberAccess.Name, model, registrations);
+
+            // AddX(() => new Impl())
+            if ((methodName is "AddScoped" or "AddTransient" or "AddSingleton") &&
+                args?.Count == 1 &&
+                args?[0].Expression is LambdaExpressionSyntax lambda)
+            {
+                var factories = GetFactoryReturnTypes(lambda, model);
+                foreach (var factory in factories)
+                {
+                    registrations.Add(new RegistrationInfo
+                    {
+                        Interface = null,
+                        Implementation = factory,
+                        ProjectName = project.Name,
+                        Lifetime = GetLifetime(methodName),
+                        IsFactoryResolved = true
+                    });
+                }
+
+                continue;
+            }
+
+            // AddDbContext<T>()
+            if (methodName == "AddDbContext" &&
+                symbol.IsGenericMethod &&
+                symbol.TypeArguments.Length == 1 &&
+                symbol.TypeArguments[0] is INamedTypeSymbol dbContextType)
+            {
+                registrations.Add(new RegistrationInfo
+                {
+                    Interface = null,
+                    Implementation = dbContextType,
+                    ProjectName = project.Name,
+                    Lifetime = LifetimeTypes.PerWebRequest,
+                    IsFactoryResolved = true
+                });
+
+                continue;
+            }
+
+            // AddX<TImpl> or AddX<TInterface, TImpl>
+            var lifetime = GetLifetime(methodName);
+            if (memberAccess.Name is not GenericNameSyntax generic || generic.TypeArgumentList.Arguments.Count == 0)
+                continue;
+
+            var typeArgs = generic.TypeArgumentList.Arguments;
+            INamedTypeSymbol? iface = null;
+            INamedTypeSymbol? impl = null;
+
+            if (typeArgs.Count == 1)
+            {
+                impl = model.GetTypeInfo(typeArgs[0]).Type as INamedTypeSymbol;
+            }
+            else if (typeArgs.Count == 2)
+            {
+                iface = model.GetTypeInfo(typeArgs[0]).Type as INamedTypeSymbol;
+                impl = model.GetTypeInfo(typeArgs[1]).Type as INamedTypeSymbol;
+            }
+
+            if (impl != null)
+            {
+                registrations.Add(new RegistrationInfo
+                {
+                    Interface = iface,
+                    Implementation = impl,
+                    ProjectName = project.Name,
+                    Lifetime = lifetime
+                });
             }
         }
     }
+
+    private static void TryAddHttpClient(Project project, ExpressionSyntax expression, SemanticModel model, List<RegistrationInfo> registrations)
+    {
+        if (expression is not GenericNameSyntax generic || generic.Identifier.Text != "AddHttpClient") return;
+
+        var symbol = model.GetSymbolInfo(generic).Symbol as IMethodSymbol;
+        if (symbol?.ContainingNamespace.ToDisplayString().Contains("Microsoft.Extensions.DependencyInjection") != true)
+            return;
+
+        if (generic.TypeArgumentList.Arguments.Count != 2)
+            return;
+
+        var interfaceSymbol = model.GetSymbolInfo(generic.TypeArgumentList.Arguments[0]).Symbol as INamedTypeSymbol;
+        var implementationSymbol = model.GetSymbolInfo(generic.TypeArgumentList.Arguments[1]).Symbol as INamedTypeSymbol;
+
+        if (interfaceSymbol == null || implementationSymbol == null) return;
+
+        registrations.Add(new RegistrationInfo
+        {
+            Interface = interfaceSymbol,
+            Implementation = implementationSymbol,
+            ProjectName = project.Name,
+            Lifetime = LifetimeTypes.Transient,
+            IsFactoryResolved = true
+        });
+    }
+
+    private static LifetimeTypes GetLifetime(string methodName) => methodName switch
+    {
+        "AddSingleton" => LifetimeTypes.Singleton,
+        "AddScoped" => LifetimeTypes.PerWebRequest,
+        "AddTransient" => LifetimeTypes.Transient,
+        _ => LifetimeTypes.Singleton
+    };
 }
