@@ -10,9 +10,14 @@ namespace MVCWebView.Controllers.Api
     public class TextReportController : ControllerBase
     {
         DependencyGraph _graph;
+        SolutionAnalyzer _solutionAnalyzer;
+        DependencyAnalyzer.DependencyAnalyzer _dependencyAnalyzer;
 
         public TextReportController(
-            DependencyGraph graph)
+            DependencyGraph graph,
+            SolutionAnalyzer solutionAnalyzer,
+            DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer
+            )
         {
             _graph = graph;
         }
@@ -39,16 +44,18 @@ namespace MVCWebView.Controllers.Api
                 }
             }
 
+            var reportRunner = new ErrorReportRunner(_graph);
+
             string result = type switch
             {
-                "DependencyTreeGPT" => await analyzer.GenerateDependencyTreeAsync(className, project),
-                "ConsumerTreeGPT" => await analyzer.GenerateConsumerTreeAsync(className, project),
-                "CyclesGPT" => await analyzer.GenerateCycleReportAsync(className, project, entireProject, allControllers),
-                "TooManyDependenciesGPT" => await analyzer.GenerateTooManyDependenciesAsync(project, entireProject, allControllers),
-                "ManualGetServiceGPT" => await analyzer.GenerateManualGetServiceReportAsync(project, entireProject, allControllers),
-                "ManualDisposeGPT" => await analyzer.GenerateManualDisposeReportAsync(project, entireProject, allControllers),
-                "UnusedMethodsGPT" => await analyzer.GenerateUnusedMethodsReportAsync(project, entireProject, allControllers),
-                "NewInsteadOfInjectedGPT" => await analyzer.GenerateNewInsteadOfInjectedReportAsync(project, entireProject, allControllers),
+                "DependencyTree" => await analyzer.GenerateDependencyTreeAsync(className, project),
+                "ConsumerTree" => await analyzer.GenerateConsumerTreeAsync(className, project),
+                "Cycles" => await analyzer.GenerateCycleReportAsync(className, project, entireProject, allControllers),
+                "TooManyDependencies" => await analyzer.GenerateTooManyDependenciesAsync(project, entireProject, allControllers),
+                "ManualGetService" => await analyzer.GenerateManualGetServiceReportAsync(project, entireProject, allControllers),
+                "ManualDispose" => await analyzer.GenerateManualDisposeReportAsync(project, entireProject, allControllers),
+                "UnusedMethods" => await analyzer.GenerateUnusedMethodsReportAsync(project, entireProject, allControllers),
+                "NewInsteadOfInjected" => await analyzer.GenerateNewInsteadOfInjectedReportAsync(project, entireProject, allControllers),
                 _ => null
             };
 
