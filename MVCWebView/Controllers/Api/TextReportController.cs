@@ -46,23 +46,21 @@ namespace MVCWebView.Controllers.Api
 
             var reportRunner = new ErrorReportRunner(_graph);
 
-            string result = type switch
+            ColoredStringBuilder result = type switch
             {
-                "DependencyTree" => await analyzer.GenerateDependencyTreeAsync(className, project),
-                "ConsumerTree" => await analyzer.GenerateConsumerTreeAsync(className, project),
-                "Cycles" => await analyzer.GenerateCycleReportAsync(className, project, entireProject, allControllers),
-                "TooManyDependencies" => await analyzer.GenerateTooManyDependenciesAsync(project, entireProject, allControllers),
-                "ManualGetService" => await analyzer.GenerateManualGetServiceReportAsync(project, entireProject, allControllers),
-                "ManualDispose" => await analyzer.GenerateManualDisposeReportAsync(project, entireProject, allControllers),
-                "UnusedMethods" => await analyzer.GenerateUnusedMethodsReportAsync(project, entireProject, allControllers),
-                "NewInsteadOfInjected" => await analyzer.GenerateNewInsteadOfInjectedReportAsync(project, entireProject, allControllers),
+                "Cycles" => reportRunner.GenerateCycleReport(className, project, entireProject, allControllers),
+                "TooManyDependencies" => reportRunner.GenerateTooManyDependencies(className, project, entireProject, allControllers),
+                "ManualGetService" => reportRunner.GenerateManualGetServiceReport(className, project, entireProject, allControllers),
+                "ManualDispose" => reportRunner.GenerateManualDisposeReport(className, project, entireProject, allControllers),
+                "UnusedMethods" => reportRunner.GenerateUnusedMethodsReport(className, project, entireProject, allControllers),
+                "NewInsteadOfInjected" => reportRunner.GenerateNewInsteadOfInjectedReport(className, project, entireProject, allControllers),
                 _ => null
             };
 
             if (result == null)
                 return BadRequest($"Unknown report type: {type}");
 
-            return Content(result, "text/plain");
+            return Content(result.ToHTMLString(), "text/plain");
         }
 
         [HttpGet(nameof(GetDependencyTreeText))]

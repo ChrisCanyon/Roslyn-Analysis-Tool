@@ -55,5 +55,60 @@ namespace DependencyAnalyzer
 
             return sb.ToString();
         }
+
+        public ColoredStringBuilder GenerateCycleReport(string className, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+
+            //TODO implement
+
+            return sb;
+        }
+
+        public ColoredStringBuilder GenerateTooManyDependencies(string className, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+
+            //TODO implement
+
+            return sb;
+        }
+
+        public ColoredStringBuilder GenerateManualGetServiceReport(string className, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+
+            //TODO implement
+
+            return sb;
+        }
+
+        public ColoredStringBuilder GenerateManualDisposeReport(string className, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+
+            //TODO implement
+
+            return sb;
+        }
+
+        public ColoredStringBuilder GenerateUnusedMethodsReport(string className, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+
+            //TODO implement
+
+            return sb;
+        }
+
+        public ColoredStringBuilder GenerateNewInsteadOfInjectedReport(string className, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+
+            //TODO implement
+
+            return sb;
+        }
+
     }
 }
