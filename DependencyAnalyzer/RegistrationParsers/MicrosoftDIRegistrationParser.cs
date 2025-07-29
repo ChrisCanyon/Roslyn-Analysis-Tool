@@ -1,5 +1,7 @@
 ﻿using DependencyAnalyzer.Interfaces;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DependencyAnalyzer.RegistrationParsers
 {
@@ -41,21 +43,121 @@ namespace DependencyAnalyzer.RegistrationParsers
             foreach (var doc in project.Documents)
             {
                 var root = await doc.GetSyntaxRootAsync();
-
-                // Get the semantic model for the current document (lets us resolve symbols)
                 var model = await doc.GetSemanticModelAsync();
-
                 if (root == null || model == null) continue;
 
-                // Find all method invocation expressions in this file (e.g., container.Register(...))
-               
-                //Are installers a thing in M.DI
-                
-                //loop through invocations and parse registration info
+                var invocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>();
+         
+                foreach (var invocation in invocations)
+                {
+                    var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                    if (symbol?.ContainingType == null) continue;
+         
+                    var containingType = symbol.ContainingType.ToDisplayString();
+                    var methodName = symbol.Name;
+         
+                    if (containingType != "Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions")
+                        continue;
+                    
+                    var expression = invocation.Expression;
+
+                    GetHttpClientsAndDbContext(project, expression, model, registrations);
+
+                    LifetimeTypes? lifetime = methodName switch
+                    {
+                        "AddSingleton" => LifetimeTypes.Singleton,
+                        "AddScoped" => LifetimeTypes.PerWebRequest,
+                        "AddTransient" => LifetimeTypes.Transient,
+                        _ => null
+                    };
+
+                    if (lifetime == null) continue;
+
+                    INamedTypeSymbol? interfaceType = null;
+                    INamedTypeSymbol? implementationType = null;
+
+                    // Look for generic type arguments
+                    if (invocation.Expression is MemberAccessExpressionSyntax memberAccess &&
+                        memberAccess.Name is GenericNameSyntax genericName &&
+                        genericName.TypeArgumentList.Arguments.Count > 0)
+                    {
+                        var typeArgs = genericName.TypeArgumentList.Arguments;
+
+                        if (typeArgs.Count == 1)
+                        {
+                            implementationType = model.GetTypeInfo(typeArgs[0]).Type as INamedTypeSymbol;
+                        }
+                        else if (typeArgs.Count == 2)
+                        {
+                            interfaceType = model.GetTypeInfo(typeArgs[0]).Type as INamedTypeSymbol;
+                            implementationType = model.GetTypeInfo(typeArgs[1]).Type as INamedTypeSymbol;
+                        }
+                    }
+
+                    registrations.Add(new RegistrationInfo
+                    {
+                        Interface = interfaceType,
+                        Implementation = implementationType,
+                        ProjectName = project.Name,
+                        Lifetime = lifetime.Value
+                    });
+                }
             }
 
-            // Return all registrations found in this project
             return registrations;
+        }
+
+        private static void GetHttpClientsAndDbContext(Project project, ExpressionSyntax expression, SemanticModel model,
+            List<RegistrationInfo> registrations)
+        {
+            // Handle AddHttpClient<IMyInterface, MyImplementation>
+            if (expression is GenericNameSyntax genericName && genericName.Identifier.Text == "AddHttpClient")
+            {
+                var symbolInfo = model.GetSymbolInfo(genericName);
+                var methodSymbol = symbolInfo.Symbol as IMethodSymbol;
+ 
+                if (methodSymbol?.ContainingNamespace.ToDisplayString().Contains("Microsoft.Extensions.DependencyInjection") == true &&
+                    genericName.TypeArgumentList.Arguments.Count == 2)
+                {
+                    var interfaceSymbol = model.GetSymbolInfo(genericName.TypeArgumentList.Arguments[0]).Symbol as INamedTypeSymbol;
+                    var implementationSymbol = model.GetSymbolInfo(genericName.TypeArgumentList.Arguments[1]).Symbol as INamedTypeSymbol;
+ 
+                    registrations.Add(new RegistrationInfo
+                    {
+                        Interface = interfaceSymbol,
+                        Implementation = implementationSymbol,
+                        ProjectName = project.Name,
+                        Lifetime = LifetimeTypes.Transient,
+                        IsFactoryResolved = true
+                    });
+                }
+            }
+ 
+            // Handle AddDbContext<MyDbContext>()
+            if (expression is MemberAccessExpressionSyntax memberAccess &&
+                memberAccess.Name.Identifier.Text == "AddDbContext")
+            {
+                if (memberAccess.Expression is IdentifierNameSyntax || memberAccess.Expression is MemberAccessExpressionSyntax)
+                {
+                    var symbolInfo = model.GetSymbolInfo(memberAccess);
+                    var methodSymbol = symbolInfo.Symbol as IMethodSymbol;
+ 
+                    if (methodSymbol?.ContainingNamespace.ToDisplayString().Contains("Microsoft.Extensions.DependencyInjection") == true &&
+                        methodSymbol.IsGenericMethod && methodSymbol.TypeArguments.Length == 1)
+                    {
+                        var dbContextType = methodSymbol.TypeArguments[0] as INamedTypeSymbol;
+ 
+                        registrations.Add(new RegistrationInfo
+                        {
+                            Interface = null,
+                            Implementation = dbContextType,
+                            ProjectName = project.Name,
+                            Lifetime = LifetimeTypes.PerWebRequest,
+                            IsFactoryResolved = true
+                        });
+                    }
+                }
+            }
         }
     }
 }

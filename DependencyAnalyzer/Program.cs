@@ -1,14 +1,10 @@
 ﻿using DependencyAnalyzer;
-using DependencyAnalyzer.RegistrationParsers;
 using DependencyAnalyzer.Visualizers;
 using System.Diagnostics;
 
 var stopwatch = Stopwatch.StartNew(); // Start the timer
 
-var solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer(
-                            "C:\\TylerDev\\onlineservices\\Source\\InSite.sln",
-                            new WindsorRegistrationParser() //Replace with implementation that can read your projects registration pattern
-                            );
+var solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\onlineservices\\Source\\InSite.sln");
 
 var dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
 var graph = dependencyAnalyzer.BuildFullDependencyGraph();
@@ -26,7 +22,8 @@ var comparer = new FullyQualifiedNameComparer();
 //var n = graph.Values.First(n => n.ClassName == "Core.Clients.IConduitConnectionFactory");
 //var n = graph.Values.First(n => n.ClassName == "Infrastructure.Incode.InvisionGateway.UtilityBilling.AutopayBillRefresher");
 //var n = graph.Values.First(n => n.ClassName == "InSiteMVC.Areas.EasyPay.Managers.FormsManager");
-var n = graph.Nodes.First(n => n.ClassName == "Infrastructure.Incode.Clients.IClientProvider");
+//var n = graph.Nodes.First(n => n.ClassName == "Infrastructure.Incode.Clients.IClientProvider");
+var n = graph.Nodes.First(n => n.ClassName == "InSite.Account.Controllers.Home.HomeController");
 
 foreach (var entry in n.RegistrationInfo)
 {

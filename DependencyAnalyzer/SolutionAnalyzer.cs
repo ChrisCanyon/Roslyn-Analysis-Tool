@@ -2,7 +2,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using DependencyAnalyzer.Interfaces;
+using DependencyAnalyzer.RegistrationParsers;
 
 namespace DependencyAnalyzer
 {
@@ -11,19 +11,52 @@ namespace DependencyAnalyzer
         public List<INamedTypeSymbol> AllTypes { get; private set; }
         public List<RegistrationInfo> RegistrationInfos { get; private set; }
 
-        public static async Task<SolutionAnalyzer> BuildSolutionAnalyzer(string solutionPath, IRegistrationParser regirationHelper)
+        public static async Task<SolutionAnalyzer> BuildSolutionAnalyzer(string solutionPath)
         {
             MSBuildLocator.RegisterDefaults();
             using var workspace = MSBuildWorkspace.Create();
             var s = await workspace.OpenSolutionAsync(solutionPath);
 
             var allTypesTask = GetAllTypesInSolutionAsync(s);
-            var registrationInfosTask = regirationHelper.GetSolutionRegistrations(s);
-
-            await Task.WhenAll(allTypesTask, registrationInfosTask);
-
-            var allTypes = await allTypesTask;
-            var registrationInfos = await registrationInfosTask;
+ 
+            var usesWindsor = false;
+            var usesMicrosoftDi = false;
+ 
+            foreach (var project in s.Projects)
+            {
+                foreach (var document in project.Documents)
+                {
+                    var text = document.GetTextAsync().Result.ToString();
+ 
+                    if (text.Contains("Castle.Windsor") || text.Contains("IWindsorContainer"))
+                    {
+                        usesWindsor = true;
+                    }
+ 
+                    if (text.Contains("Microsoft.Extensions.DependencyInjection") || text.Contains("IServiceCollection"))
+                    {
+                        usesMicrosoftDi = true;
+                    }
+                }
+            }
+            var allTypes = new List<INamedTypeSymbol>();
+            var registrationInfos =  new List<RegistrationInfo>();
+            if (usesMicrosoftDi)
+            {
+                var registrationHelper = new MicrosoftDIRegistrationParser();
+                var registrationInfosTask = registrationHelper.GetSolutionRegistrations(s);
+                await Task.WhenAll(allTypesTask, registrationInfosTask);
+                allTypes.AddRange(await allTypesTask);
+                registrationInfos.AddRange(await registrationInfosTask);
+            }
+            if (usesWindsor)
+            {
+                var registrationHelper = new WindsorRegistrationParser();
+                var registrationInfosTask = registrationHelper.GetSolutionRegistrations(s);
+                await Task.WhenAll(allTypesTask, registrationInfosTask);
+                allTypes.AddRange(await allTypesTask);
+                registrationInfos.AddRange(await registrationInfosTask);
+            }
             workspace.CloseSolution();
             return new SolutionAnalyzer(allTypes, registrationInfos);
         }
