@@ -26,7 +26,7 @@ var comparer = new FullyQualifiedNameComparer();
 //var n = graph.Values.First(n => n.ClassName == "Core.Clients.IConduitConnectionFactory");
 //var n = graph.Values.First(n => n.ClassName == "Infrastructure.Incode.InvisionGateway.UtilityBilling.AutopayBillRefresher");
 //var n = graph.Values.First(n => n.ClassName == "InSiteMVC.Areas.EasyPay.Managers.FormsManager");
-var n = graph.Values.First(n => n.ClassName == "Infrastructure.Incode.Clients.IClientProvider");
+var n = graph.Nodes.First(n => n.ClassName == "Infrastructure.Incode.Clients.IClientProvider");
 
 foreach (var entry in n.RegistrationInfo)
 {
@@ -34,7 +34,7 @@ foreach (var entry in n.RegistrationInfo)
     NodePrinter.PrintDependencyTreeForProject(n, entry.Value.ProjectName).Write();
 //    GraphvizConverter.CreateConsumerGraphvizForProject(n, entry.Value.ProjectName);
 //    GraphvizConverter.CreateDependencyGraphvizForProject(n, entry.Value.ProjectName);
-    GraphvizConverter.CreateGraphvizForProjectNode(n, entry.Value.ProjectName);
+    GraphvizConverter.CreateGraphvizForProjectNode(n, entry.Value.ProjectName, false);
 //    GraphvizConverter.CreateFullGraphvizForProject(graph, entry.Value.ProjectName);
 //    GraphvizConverter.CreateControllerGraphvizForProject(graph, entry.Value.ProjectName);
 }

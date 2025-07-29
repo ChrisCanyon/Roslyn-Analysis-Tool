@@ -8,7 +8,6 @@ namespace DependencyAnalyzer
 {
     public class SolutionAnalyzer
     {
-        public Solution Solution { get; private set; }
         public List<INamedTypeSymbol> AllTypes { get; private set; }
         public List<RegistrationInfo> RegistrationInfos { get; private set; }
 
@@ -24,8 +23,9 @@ namespace DependencyAnalyzer
             await Task.WhenAll(allTypesTask, registrationInfosTask);
 
             var allTypes = await allTypesTask;
-            var registrationInfos = await registrationInfosTask; 
-            return new SolutionAnalyzer(s, allTypes, registrationInfos);
+            var registrationInfos = await registrationInfosTask;
+            workspace.CloseSolution();
+            return new SolutionAnalyzer(allTypes, registrationInfos);
         }
 
         public static bool IsController(INamedTypeSymbol symbol)
@@ -131,9 +131,8 @@ namespace DependencyAnalyzer
             return ret;
         }
 
-        private SolutionAnalyzer(Solution solution, List<INamedTypeSymbol> allTypes, List<RegistrationInfo> registrationInfos)
+        private SolutionAnalyzer(List<INamedTypeSymbol> allTypes, List<RegistrationInfo> registrationInfos)
         {
-            Solution = solution;
             AllTypes = allTypes;
             RegistrationInfos = registrationInfos;
         }

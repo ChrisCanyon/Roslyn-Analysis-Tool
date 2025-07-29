@@ -18,7 +18,7 @@ namespace DependencyAnalyzer.RegistrationParsers
     ///
     /// Intended for static analysis and graph generation, not for runtime fidelity.
     /// </remarks>
-    class WindsorRegistrationParser : IRegistrationParser
+    public class WindsorRegistrationParser : IRegistrationParser
     {
         public async Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution)
         {

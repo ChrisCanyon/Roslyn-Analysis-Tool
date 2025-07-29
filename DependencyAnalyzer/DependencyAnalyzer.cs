@@ -41,7 +41,7 @@ namespace DependencyAnalyzer
         }
 
         //TODO make node map a class variable
-        public Dictionary<INamedTypeSymbol, DependencyNode> BuildFullDependencyGraph()
+        public DependencyGraph BuildFullDependencyGraph()
         {
             var nodeMap = CreateBaseNodes();
 
@@ -51,7 +51,7 @@ namespace DependencyAnalyzer
 
             ExpandInterfaces(nodeMap);
 
-            return nodeMap;
+            return new DependencyGraph(nodeMap.Values.ToList());
         }
 
         private void ExpandInterfaces(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)

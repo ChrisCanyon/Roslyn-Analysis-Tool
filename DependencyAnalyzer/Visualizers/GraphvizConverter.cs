@@ -6,24 +6,24 @@ namespace DependencyAnalyzer.Visualizers
 {
     public static class GraphvizConverter
     {
-        public static void CreateControllerGraphvizForProject(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
+        public static string CreateControllerGraphvizForProject(DependencyGraph graph, string project, bool forWeb)
         {
-            var basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
-            basePath = Path.Combine(basePath, "output");
+            var basePath = getBasePath(forWeb);
 
             var dotPath = Path.Combine(basePath, $"{project}-Controllers.dot");
             var svgPath = Path.Combine(basePath, $"{project}-Controllers.svg");
 
-            File.WriteAllText(dotPath, GetGraphvizStringForEntireProject(graph, project));
+            File.WriteAllText(dotPath, GetGraphvizStringForController(graph, project));
 
             GenerateSvg(dotPath, svgPath);
+
+            return svgPath;
         }
 
 
-        public static void CreateFullGraphvizForProject(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
+        public static string CreateFullGraphvizForProject(DependencyGraph graph, string project, bool forWeb)
         {
-            var basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
-            basePath = Path.Combine(basePath, "output");
+            var basePath = getBasePath(forWeb);
 
             var dotPath = Path.Combine(basePath, $"{project}-Full.dot");
             var svgPath = Path.Combine(basePath, $"{project}-Full.svg");
@@ -31,12 +31,13 @@ namespace DependencyAnalyzer.Visualizers
             File.WriteAllText(dotPath, GetGraphvizStringForEntireProject(graph, project));
 
             GenerateSvg(dotPath, svgPath);
+
+            return svgPath;
         }
 
-        public static void CreateConsumerGraphvizForProject(DependencyNode startNode, string project)
+        public static string CreateConsumerGraphvizForProject(DependencyNode startNode, string project, bool forWeb)
         {
-            var basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
-            basePath = Path.Combine(basePath, "output");
+            var basePath = getBasePath(forWeb);
 
             var dotPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Consumer.dot");
             var svgPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Consumer.svg");
@@ -44,12 +45,13 @@ namespace DependencyAnalyzer.Visualizers
             File.WriteAllText(dotPath, GetConsumerGraphvizString(startNode, project));
 
             GenerateSvg(dotPath, svgPath);
+
+            return svgPath;
         }
 
-        public static void CreateDependencyGraphvizForProject(DependencyNode startNode, string project)
+        public static string CreateDependencyGraphvizForProject(DependencyNode startNode, string project, bool forWeb)
         {
-            var basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
-            basePath = Path.Combine(basePath, "output");
+            var basePath = getBasePath(forWeb);
 
             var dotPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Dependency.dot");
             var svgPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Dependency.svg");
@@ -57,12 +59,13 @@ namespace DependencyAnalyzer.Visualizers
             File.WriteAllText(dotPath, GetDependencyGraphvizString(startNode, project));
 
             GenerateSvg(dotPath, svgPath);
+
+            return svgPath;
         }
 
-        public static void CreateGraphvizForProjectNode(DependencyNode startNode, string project)
+        public static string CreateGraphvizForProjectNode(DependencyNode startNode, string project, bool forWeb)
         {
-            var basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
-            basePath = Path.Combine(basePath, "output");
+            var basePath = getBasePath(forWeb);
 
             var dotPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Full.dot");
             var svgPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Full.svg");
@@ -70,6 +73,22 @@ namespace DependencyAnalyzer.Visualizers
             File.WriteAllText(dotPath, GetNodeGraphvizString(startNode, project));
 
             GenerateSvg(dotPath, svgPath);
+
+            return svgPath;
+        }
+        private static string getBasePath(bool forWeb)
+        {
+            var basePath = "";
+            if (forWeb)
+            {
+                basePath = Directory.GetParent(Directory.GetCurrentDirectory()).FullName;
+            }
+            else
+            {
+                basePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName;
+            }
+
+            return Path.Combine(basePath, "output");
         }
 
         private static void GenerateSvg(string dotFilePath, string outputSvgPath)
@@ -100,7 +119,7 @@ namespace DependencyAnalyzer.Visualizers
             }
         }
 
-       
+
 
         private static string GetConsumerGraphvizString(DependencyNode startNode, string project)
         {
@@ -176,14 +195,14 @@ namespace DependencyAnalyzer.Visualizers
             return sb.ToString();
         }
 
-        private static string GetGraphvizStringForEntireProject(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
+        private static string GetGraphvizStringForEntireProject(DependencyGraph graph, string project)
         {
             var sb = new StringBuilder();
 
             sb.AppendLine("digraph Dependencies {");
-            sb.AppendLine("\t rankdir=RL;");
+            sb.AppendLine("\t rankdir=LR;");
             CreateGraphvizLegend(sb);
-            var projectNodes = graph.Values.Where(x => x.RegistrationInfo.ContainsKey(project));
+            var projectNodes = graph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
             foreach (var node in projectNodes)
             {
                 ProcessSingleNode(node, project, sb);
@@ -256,14 +275,14 @@ namespace DependencyAnalyzer.Visualizers
         }
 
 
-        private static string GetGraphvizStringForController(Dictionary<INamedTypeSymbol, DependencyNode> graph, string project)
+        private static string GetGraphvizStringForController(DependencyGraph graph, string project)
         {
             var sb = new StringBuilder();
 
             sb.AppendLine("digraph controllers {");
             sb.AppendLine("\t rankdir=LR;");
             CreateGraphvizLegend(sb);
-            var controllersInProject = graph.Values.Where(
+            var controllersInProject = graph.Nodes.Where(
                 node => node.RegistrationInfo.Any(reg => reg.Key == project && reg.Value.Lifetime == LifetimeTypes.Controller));
 
             var rootLifetime = LifetimeTypes.Controller;

@@ -1,11 +1,10 @@
-﻿using Microsoft.CodeAnalysis;
-using System.Text;
+﻿using System.Text;
 
 namespace DependencyAnalyzer
 {
-    public class ErrorReportRunner(Dictionary<INamedTypeSymbol, DependencyNode> graph)
+    public class ErrorReportRunner(DependencyGraph graph)
     {
-        Dictionary<INamedTypeSymbol, DependencyNode> DependencyGraph = graph;
+        DependencyGraph DependencyGraph = graph;
 
         public struct DependencyMismatch
         {
@@ -17,7 +16,7 @@ namespace DependencyAnalyzer
         public string FindLifetimeMismatches()
         {
             var issues = new List<DependencyMismatch>();
-            foreach (var node in DependencyGraph.Values)
+            foreach (var node in DependencyGraph.Nodes)
             {
                 foreach (var (project, registration) in node.RegistrationInfo)
                 {
