@@ -7,6 +7,7 @@
 
 <div class="bg-light p-2 border-bottom">
     <div class="d-flex justify-content-center align-items-center gap-2">
+        <button onclick="loadPrevious()">< Back</button>
         <input id="classInput" class="form-control w-auto" placeholder="Core.InSite.SiteContext" />
         <select id="projectInput" class="form-select w-auto">
             @foreach (var project in (List<string>)ViewData["ProjectList"])
@@ -31,9 +32,9 @@
             </div>
         </div>
 
-        <div id="treePanel" class="bg-dark text-light p-3"
+        <div id="treePanel" class="bg-black text-light p-3"
              style="white-space: pre; overflow: auto; max-height: 100%; max-width: 40vw;">
-            <pre id="treeOutput" class="flex-fill mono p-2 bg-dark text-light">Enter a fully qualified class name and select a project</pre>
+            <pre id="treeOutput" class="flex-fill mono p-2 bg-black text-light">Enter a fully qualified class name and select a project</pre>
         </div>
     </div>
 </div>

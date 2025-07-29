@@ -34,7 +34,7 @@ namespace MVCWebView.Controllers.Api
             var dependency = NodePrinter.PrintDependencyTreeForProject(node, projectReg.ProjectName);
             var consumer = NodePrinter.PrintConsumerTreeForProject(node, projectReg.ProjectName);
 
-            return Content(dependency.ToString() + "\n\n" + consumer.ToString(), "text/html");
+            return Content(dependency.ToHTMLString() + "\n\n" + consumer.ToHTMLString(), "text/html");
         }
 
         [HttpGet("GetSvg")]

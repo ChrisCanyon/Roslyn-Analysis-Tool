@@ -101,7 +101,7 @@ namespace DependencyAnalyzer.Visualizers
             }
             if(projectRegistration.Lifetime == LifetimeTypes.Controller)
             {
-                consoleColor = ConsoleColor.White;
+                consoleColor = ConsoleColor.Gray;
             }
 
             string marker = prefix == "" ? "" : isLast ? "╘═ " : "╞═ ";

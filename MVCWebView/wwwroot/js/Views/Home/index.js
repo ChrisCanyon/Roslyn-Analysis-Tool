@@ -2,6 +2,70 @@
     document.getElementById("treePanel").style.display = "block";
     fetchDependencyTree();
     loadSingleClassSvg();
+} 
+
+document.addEventListener("DOMContentLoaded", () => {
+    const input = document.getElementById("classInput");
+    console.log("adding listener");
+    input.addEventListener("input", (event) => {
+        el = event.target;
+        const length = Math.max(el.value.length, 25);
+        el.style.setProperty("width", `${length}ch`, "important");
+    });
+});
+
+async function loadPrevious() {
+    if (historyStack.length < 2) {
+        console.warn("No previous view.");
+        return;
+    }
+
+    const currentView = historyStack.pop();
+    const lastView = historyStack.pop();
+
+    if (!lastView.project) {
+        console.warn("Missing class name for SINGLE_CLASS view.");
+        return;
+    }
+    document.getElementById("projectInput").value = lastView.project;
+
+    switch (lastView.type) {
+        case ViewType.CONTROLLER:
+            await loadAllControllers();
+            break;
+
+        case ViewType.ENTIRE_PROJECT:
+            await loadEntireProject();
+            break;
+
+        case ViewType.SINGLE_CLASS:
+            if (!lastView.className) {
+                console.warn("Missing class name for SINGLE_CLASS view.");
+                return;
+            }
+            document.getElementById("classInput").value = lastView.className;
+            await reloadPage(lastView.project, lastView.className);
+            break;
+
+        default:
+            console.warn("Unknown view type:", lastView.type);
+    }
+}
+
+const ViewType = {
+    CONTROLLER: "Controller",
+    ENTIRE_PROJECT: "EntireProject",
+    SINGLE_CLASS: "SingleClass"
+};
+
+const historyStack = [];
+
+function createViewContext(type, project, className = null) {
+    return {
+        type,               // one of ViewType
+        project,            // string
+        className           // string or null (only for SINGLE_CLASS)
+    };
 }
 
 async function loadEntireProject() {
@@ -13,6 +77,7 @@ async function loadEntireProject() {
     if (response.ok) {
         const svg = await response.text();
         document.getElementById('svgOutput').innerHTML = svg;
+        historyStack.push(createViewContext(ViewType.ENTIRE_PROJECT, project))
     } else {
         document.getElementById('svgOutput').innerText = 'Failed to load SVG.';
     }
@@ -29,6 +94,7 @@ async function loadAllControllers() {
     if (response.ok) {
         const svg = await response.text();
         document.getElementById('svgOutput').innerHTML = svg;
+        historyStack.push(createViewContext(ViewType.CONTROLLER, project))
     } else {
         document.getElementById('svgOutput').innerText = 'Failed to load SVG.';
     }
@@ -47,7 +113,7 @@ async function fetchDependencyTree() {
         document.getElementById("treeOutput").textContent = "Error: " + errorText;
         return;
     }
-
+    historyStack.push(createViewContext(ViewType.SINGLE_CLASS,project, className))
     const html = await response.text();
     document.getElementById("treeOutput").innerHTML = html;
 }
