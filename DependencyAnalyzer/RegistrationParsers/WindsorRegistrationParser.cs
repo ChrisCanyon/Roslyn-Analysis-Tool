@@ -148,7 +148,8 @@ namespace DependencyAnalyzer.RegistrationParsers
                .OfType<INamedTypeSymbol>()
                .Where(symbol =>
                    symbol is not null &&
-                   symbol.AllInterfaces.Any(i => i.ToDisplayString() == "Castle.Windsor.Installer.IWindsorInstaller"));
+                   symbol.AllInterfaces.Any(i => i.ToDisplayString() == "Castle.MicroKernel.Registration.IWindsorInstaller")
+                );
         }
 
         private record InstallInvocationContext(
@@ -181,6 +182,9 @@ namespace DependencyAnalyzer.RegistrationParsers
 
                             var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
                             if (symbol is null) return false;
+
+                            if (symbol.ContainingType.ToDisplayString() == "Castle.Windsor.IWindsorContainer")
+                                return true;
 
                             return symbol.ContainingType.AllInterfaces
                                 .Any(i => i.ToDisplayString() == "Castle.Windsor.IWindsorContainer");

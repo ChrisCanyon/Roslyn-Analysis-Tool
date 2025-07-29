@@ -25,17 +25,18 @@ var comparer = new FullyQualifiedNameComparer();
 //var n = graph.Values.First(n => n.ClassName == "InSite.Bll.AutoPayManager");
 //var n = graph.Values.First(n => n.ClassName == "Core.Clients.IConduitConnectionFactory");
 //var n = graph.Values.First(n => n.ClassName == "Infrastructure.Incode.InvisionGateway.UtilityBilling.AutopayBillRefresher");
-var n = graph.Values.First(n => n.ClassName == "InSiteMVC.Areas.EasyPay.Managers.FormsManager");
+//var n = graph.Values.First(n => n.ClassName == "InSiteMVC.Areas.EasyPay.Managers.FormsManager");
+var n = graph.Values.First(n => n.ClassName == "Infrastructure.Incode.Clients.IClientProvider");
 
-foreach (var entry in n.RegistrationInfo.Take(1))
+foreach (var entry in n.RegistrationInfo)
 {
     NodePrinter.PrintConsumerTreeForProject(n, entry.Value.ProjectName).Write();
     NodePrinter.PrintDependencyTreeForProject(n, entry.Value.ProjectName).Write();
-    GraphvizConverter.CreateConsumerGraphvizForProject(n, entry.Value.ProjectName);
-    GraphvizConverter.CreateDependencyGraphvizForProject(n, entry.Value.ProjectName);
+//    GraphvizConverter.CreateConsumerGraphvizForProject(n, entry.Value.ProjectName);
+//    GraphvizConverter.CreateDependencyGraphvizForProject(n, entry.Value.ProjectName);
     GraphvizConverter.CreateGraphvizForProjectNode(n, entry.Value.ProjectName);
-    GraphvizConverter.CreateFullGraphvizForProject(graph, entry.Value.ProjectName);
-    GraphvizConverter.CreateControllerGraphvizForProject(graph, entry.Value.ProjectName);
+//    GraphvizConverter.CreateFullGraphvizForProject(graph, entry.Value.ProjectName);
+//    GraphvizConverter.CreateControllerGraphvizForProject(graph, entry.Value.ProjectName);
 }
 //Console.WriteLine(n.PrintRegistrations());
 
