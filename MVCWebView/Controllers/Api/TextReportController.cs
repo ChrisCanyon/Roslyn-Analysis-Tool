@@ -41,18 +41,6 @@ namespace MVCWebView.Controllers.Api
 
             string result = type switch
             {
-                "Cycles" => $"[CyclesGPT]\nclassName={className}\nproject={project}\nentireProject={entireProject}\nallControllers={allControllers}",
-                "TooManyDependencies" => $"[TooManyDependenciesGPT]\nproject={project}\nentireProject={entireProject}\nallControllers={allControllers}",
-                "ManualGetService" => $"[ManualGetServiceGPT]\nproject={project}\nentireProject={entireProject}\nallControllers={allControllers}",
-                "ManualDispose" => $"[ManualDisposeGPT]\nproject={project}\nentireProject={entireProject}\nallControllers={allControllers}",
-                "UnusedMethods" => $"[UnusedMethodsGPT]\nproject={project}\nentireProject={entireProject}\nallControllers={allControllers}",
-                "NewInsteadOfInjected" => $"[NewInsteadOfInjectedGPT]\nproject={project}\nentireProject={entireProject}\nallControllers={allControllers}",
-                _ => null
-            };
-
-            /*
-            string result = type switch
-            {
                 "DependencyTreeGPT" => await analyzer.GenerateDependencyTreeAsync(className, project),
                 "ConsumerTreeGPT" => await analyzer.GenerateConsumerTreeAsync(className, project),
                 "CyclesGPT" => await analyzer.GenerateCycleReportAsync(className, project, entireProject, allControllers),
@@ -63,7 +51,6 @@ namespace MVCWebView.Controllers.Api
                 "NewInsteadOfInjectedGPT" => await analyzer.GenerateNewInsteadOfInjectedReportAsync(project, entireProject, allControllers),
                 _ => null
             };
-            */
 
             if (result == null)
                 return BadRequest($"Unknown report type: {type}");
