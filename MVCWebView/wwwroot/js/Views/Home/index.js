@@ -4,6 +4,7 @@
     enableNodeSpecificTextOptions()
     const className = document.getElementById("classInput").value;
     if (!className) return window.alert("No class selected");
+
     loadTextReports();
     loadSingleClassSvg();
 } 
@@ -158,7 +159,6 @@ async function fetchTextReport(endpoint, checkId, outputId){
         return;
     }
 
-    historyStack.push(createViewContext(ViewType.SINGLE_CLASS, project, className))
     const html = await response.text();
     document.getElementById(outputId).innerHTML = html;
 }
@@ -181,7 +181,6 @@ async function fetchDependencyTree() {
         document.getElementById("output-dependency-tree").textContent = "Error: " + errorText;
         return;
     }
-    historyStack.push(createViewContext(ViewType.SINGLE_CLASS,project, className))
     const html = await response.text();
     document.getElementById("output-dependency-tree").innerHTML = html;
 }
@@ -205,7 +204,6 @@ async function fetchConsumerTree() {
         document.getElementById("output-consumer-tree").textContent = "Error: " + errorText;
         return;
     }
-    historyStack.push(createViewContext(ViewType.SINGLE_CLASS, project, className))
     const html = await response.text();
     document.getElementById("output-consumer-tree").innerHTML = html;
 }
@@ -217,6 +215,7 @@ async function loadSingleClassSvg() {
 
     const response = await fetch(`/api/SVG/GetSvg?className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}`);
     if (response.ok) {
+        historyStack.push(createViewContext(ViewType.SINGLE_CLASS, project, className))
         const svg = await response.text();
         document.getElementById('svgOutput').innerHTML = svg;
     } else {
