@@ -8,7 +8,7 @@
     <div style="position: absolute; left: 0; padding-left: 1em;">
         <button class="btn btn-outline-secondary" onclick="loadPrevious()">&lt; Back</button>
     </div>
-    <div class="d-flex align-items-center gap-2" style=" position: absolute; left: 50%; transform: translateX(-50%);">
+    <div class="d-flex align-items-center gap-2" style=" position: absolute; left: 30%; transform: translateX(-30%);">
         <input id="classInput" class="form-control w-auto" placeholder="Core.InSite.SiteContext" />
         <select id="projectInput" class="form-select w-auto">
             @foreach (var project in (List<string>)ViewData["ProjectList"])
@@ -16,7 +16,7 @@
                 <option value="@project">@project</option>
             }
         </select>
-        <button class="btn btn-outline-primary" onclick="reloadPage()">Get Selected Class</button>
+        <button class="btn btn-outline-primary" style="width: max-content;" onclick="loadSingleNode()">Get Selected Class</button>
     </div>
     <div class="d-flex align-items-center gap-2" style="position: absolute; right: 0; padding-right: 1em;">
         <button class="btn btn-outline-secondary" onclick="loadEntireProject()">Load Entire Project</button>
@@ -35,17 +35,95 @@
             </div>
         </div>
 
-        <div id="treePanel" class="bg-black text-light p-3"
-             style="white-space: pre; overflow: auto; max-height: 100%; max-width: 40vw;">
-            <pre id="treeOutput" class="flex-fill mono p-2 bg-black text-light">Enter a fully qualified class name and select a project</pre>
+        <div class="bg-black text-light p-3"
+            style="overflow: auto; max-height: 100%; max-width: 40vw;">
+            <div class="text-options-container container py-3">
+                <div class="row row-cols-1 row-cols-md-3 g-2">
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="check-dependency-tree" checked>
+                            <label class="form-check-label" for="check-dependency-tree">Dependency Tree</label>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="check-consumer-tree" checked>
+                            <label class="form-check-label" for="check-consumer-tree">Consumer Tree</label>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="check-cycles">
+                            <label class="form-check-label" for="check-cycles">Cycles</label>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="check-too-many-deps">
+                            <label class="form-check-label" for="check-too-many-deps">Too Many Dependencies</label>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="check-get-service">
+                            <label class="form-check-label" for="check-get-service">Manual GetService()</label>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="check-manual-dispose">
+                            <label class="form-check-label" for="check-manual-dispose">Manual Dispose</label>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="check-unused-methods">
+                            <label class="form-check-label" for="check-unused-methods">Unused Methods</label>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="check-new-instead-of-injected">
+                            <label class="form-check-label" for="check-new-instead-of-injected">`new` Instead of Injected</label>
+                        </div>
+                    </div>
+
+                    <div class="col">
+                        <div class="form-check">
+                            <button class="btn btn-primary" onclick="loadTextReports()"> Reload Reports </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="outputContainer" class="pre-wrap-container  mono p-2 bg-black text-light">
+                <pre id="output-dependency-tree">Enter a fully qualified class name and select a project</pre>
+                <pre id="output-consumer-tree" style="display: none;"></pre>
+                <pre id="output-cycles" style="display: none;"></pre>
+                <pre id="output-too-many-deps" style="display: none;"></pre>
+                <pre id="output-get-service" style="display: none;"></pre>
+                <pre id="output-manual-dispose" style="display: none;"></pre>
+                <pre id="output-unused-methods" style="display: none;"></pre>
+                <pre id="output-new-instead-of-injected" style="display: none;"></pre>
+            </div>
         </div>
     </div>
 </div>
 
 <style>
+    .pre-wrap-container pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        overflow-x: auto; /* allows horizontal scroll if needed */
+    }
     .mono {
         font-family: monospace;
-        white-space: pre-wrap;
     }
     #loadingSpinner {
       position: fixed;
@@ -71,5 +149,9 @@
 
     @@keyframes spin {
       to { transform: rotate(360deg); }
+    }
+
+    .text-options-container {
+        background-color: #6c008b;
     }
 </style>

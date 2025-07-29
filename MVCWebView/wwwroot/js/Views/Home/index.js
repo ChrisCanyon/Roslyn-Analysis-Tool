@@ -1,8 +1,24 @@
-﻿async function reloadPage() {
-    document.getElementById("treePanel").style.display = "block";
-    fetchDependencyTree();
+﻿async function loadSingleNode() {
+    allControllers = false;
+    entireProject = false;
+    enableNodeSpecificTextOptions()
+    const className = document.getElementById("classInput").value;
+    if (!className) return window.alert("No class selected");
+    loadTextReports();
     loadSingleClassSvg();
 } 
+
+function disableNodeSpecificTextOptions() {
+    document.getElementById("check-dependency-tree").checked = false;
+    document.getElementById("check-dependency-tree").disabled = true;
+    document.getElementById("check-consumer-tree").checked = false;
+    document.getElementById("check-consumer-tree").disabled = true;
+}
+
+function enableNodeSpecificTextOptions() {
+    document.getElementById("check-dependency-tree").disabled = false;
+    document.getElementById("check-consumer-tree").disabled = false;
+}
 
 document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("classInput");
@@ -44,7 +60,7 @@ async function loadPrevious() {
                 return;
             }
             document.getElementById("classInput").value = lastView.className;
-            await reloadPage(lastView.project, lastView.className);
+            await loadSingleNode(lastView.project, lastView.className);
             break;
 
         default:
@@ -68,12 +84,16 @@ function createViewContext(type, project, className = null) {
     };
 }
 
+var entireProject = false;
 async function loadEntireProject() {
+    allControllers = false;
+    entireProject = true;
     showSpinner();
-    document.getElementById("treePanel").style.display = "none";
+    disableNodeSpecificTextOptions();
+    loadTextReports(true, false);
     const project = document.getElementById('projectInput').value;
 
-    const response = await fetch(`/api/dependency/GetEntireProjectSVG?project=${encodeURIComponent(project)}`);
+    const response = await fetch(`/api/SVG/GetEntireProjectSVG?project=${encodeURIComponent(project)}`);
     if (response.ok) {
         const svg = await response.text();
         document.getElementById('svgOutput').innerHTML = svg;
@@ -85,12 +105,16 @@ async function loadEntireProject() {
     configureSVG();
 }
 
+var allControllers = false;
 async function loadAllControllers() {
+    allControllers = true;
+    entireProject = false;
     showSpinner();
-    document.getElementById("treePanel").style.display = "none";
+    disableNodeSpecificTextOptions();
+    loadTextReports(false, true);
     const project = document.getElementById('projectInput').value;
 
-    const response = await fetch(`/api/dependency/GetAllControllersSVG?project=${encodeURIComponent(project)}`);
+    const response = await fetch(`/api/SVG/GetAllControllersSVG?project=${encodeURIComponent(project)}`);
     if (response.ok) {
         const svg = await response.text();
         document.getElementById('svgOutput').innerHTML = svg;
@@ -102,29 +126,96 @@ async function loadAllControllers() {
     configureSVG();
 }
 
-async function fetchDependencyTree() {
+async function loadTextReports() {
+    fetchDependencyTree(); //these are special
+    fetchConsumerTree(); //these are special
+    fetchTextReport("Cycles", "check-cycles", "output-cycles");
+    fetchTextReport("TooManyDependencies", "check-too-many-deps", "output-too-many-deps");
+    fetchTextReport("ManualGetService", "check-get-service", "output-get-service");
+    fetchTextReport("ManualDispose", "check-manual-dispose", "output-manual-dispose");
+    fetchTextReport("UnusedMethods", "check-unused-methods", "output-unused-methods");
+    fetchTextReport("NewInsteadOfInjected", "check-new-instead-of-injected", "output-new-instead-of-injected");
+};
+
+async function fetchTextReport(endpoint, checkId, outputId){
+    if (!document.getElementById(checkId).checked) {
+        document.getElementById(outputId).innerText = '';
+        document.getElementById(outputId).display = 'none';
+        return;
+    }
+    document.getElementById(outputId).style.display = 'block';
+
     const className = document.getElementById("classInput").value;
     const project = document.getElementById("projectInput").value;
 
-    const response = await fetch(`/api/Dependency/GetDependencyTreeText?className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}`);
+
+    var params = `type=${encodeURIComponent(endpoint)}&className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}&entireProject=${encodeURIComponent(entireProject)}&allControllers=${encodeURIComponent(allControllers) }`
+    const response = await fetch(`/api/TextReport/GetTextReport?${params}`);
 
     if (!response.ok) {
         const errorText = await response.text();
-        document.getElementById("treeOutput").textContent = "Error: " + errorText;
+        document.getElementById(outputId).textContent = "Error: " + errorText;
+        return;
+    }
+
+    historyStack.push(createViewContext(ViewType.SINGLE_CLASS, project, className))
+    const html = await response.text();
+    document.getElementById(outputId).innerHTML = html;
+}
+
+async function fetchDependencyTree() {
+    if (!document.getElementById('check-dependency-tree').checked) {
+        document.getElementById('output-dependency-tree').innerText = '';
+        document.getElementById('output-dependency-tree').diplay = 'none';
+        return;
+    }
+    document.getElementById('output-dependency-tree').style.display = 'block';
+
+    const className = document.getElementById("classInput").value;
+    const project = document.getElementById("projectInput").value;
+
+    const response = await fetch(`/api/TextReport/GetDependencyTreeText?className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}`);
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        document.getElementById("output-dependency-tree").textContent = "Error: " + errorText;
         return;
     }
     historyStack.push(createViewContext(ViewType.SINGLE_CLASS,project, className))
     const html = await response.text();
-    document.getElementById("treeOutput").innerHTML = html;
+    document.getElementById("output-dependency-tree").innerHTML = html;
 }
 
+async function fetchConsumerTree() {
+    if (!document.getElementById('check-consumer-tree').checked) {
+        document.getElementById('output-consumer-tree').innerText = '';
+        document.getElementById('output-consumer-tree').display = 'none';
+        return;
+    }
+
+    document.getElementById('output-consumer-tree').style.display = 'block';
+
+    const className = document.getElementById("classInput").value;
+    const project = document.getElementById("projectInput").value;
+
+    const response = await fetch(`/api/TextReport/GetConsumerTreeText?className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}`);
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        document.getElementById("output-consumer-tree").textContent = "Error: " + errorText;
+        return;
+    }
+    historyStack.push(createViewContext(ViewType.SINGLE_CLASS, project, className))
+    const html = await response.text();
+    document.getElementById("output-consumer-tree").innerHTML = html;
+}
 
 async function loadSingleClassSvg() {
     showSpinner();
     const className = document.getElementById('classInput').value;
     const project = document.getElementById('projectInput').value;
 
-    const response = await fetch(`/api/dependency/GetSvg?className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}`);
+    const response = await fetch(`/api/SVG/GetSvg?className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}`);
     if (response.ok) {
         const svg = await response.text();
         document.getElementById('svgOutput').innerHTML = svg;
@@ -167,6 +258,7 @@ function configureSVG(className) {
         if(className) centerSVGOnSelectedClass(className);
     }
 }
+
 function centerSVGOnSelectedClass(className) {
     const node = findNodeByTitle(className);
     if (!node) return;
@@ -216,11 +308,14 @@ function attachClickHandlers() {
         node.style.cursor = "pointer";
         node.addEventListener("click", () => {
             console.log("Clicked node:", className);
-            document.getElementById("classInput").value = className;
-            reloadPage();
+            const input = document.getElementById("classInput");
+            input.value = className
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            loadSingleNode();
         });
     });
 }
+
 function showSpinner() {
     document.getElementById("loadingSpinner").style.display = "flex";
 }

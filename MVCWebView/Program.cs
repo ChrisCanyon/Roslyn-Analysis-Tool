@@ -10,14 +10,9 @@ builder.Services.AddControllersWithViews()
 SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\onlineservices\\Source\\InSite.sln");
 DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
 DependencyGraph graph = dependencyAnalyzer.BuildFullDependencyGraph();
-solutionAnalyzer = null;
-dependencyAnalyzer = null;
 
-GC.Collect();
-GC.WaitForPendingFinalizers();
-GC.Collect();
-//builder.Services.AddSingleton(solutionAnalyzer);
-//builder.Services.AddSingleton(dependencyAnalyzer);
+builder.Services.AddSingleton(solutionAnalyzer);
+builder.Services.AddSingleton(dependencyAnalyzer);
 builder.Services.AddSingleton(graph);
 
 var app = builder.Build();
