@@ -62,4 +62,126 @@ public abstract class BaseParser
 
         return returnTypes.Distinct(new FullyQualifiedNameComparer());
     }
+
+    protected static IEnumerable<InvocationExpressionSyntax> FindInvocations(SyntaxNode root, SemanticModel model, string methodName, string fullyQualifiedDeclaringType)
+    {
+        return root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(invocation =>
+            {
+                if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return false;
+                if (memberAccess.Name.Identifier.Text != methodName) return false;
+
+                var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                if (symbol == null) return false;
+
+                if (symbol.ContainingType.ToDisplayString() == fullyQualifiedDeclaringType)
+                    return true;
+
+                // Wrapper/forwarder class: check implemented interfaces
+                return symbol.ContainingType.AllInterfaces
+                    .Any(i => i.ToDisplayString() == fullyQualifiedDeclaringType);
+            }).ToList();
+    }
+
+    protected static IEnumerable<INamedTypeSymbol> FindImplementations(SemanticModel model, SyntaxNode root, string fullyQualifiedInterfaceName)
+    {
+        return root.DescendantNodes()
+           .OfType<ClassDeclarationSyntax>()
+           .Select(classDecl => model.GetDeclaredSymbol(classDecl))
+           .OfType<INamedTypeSymbol>()
+           .Where(symbol =>
+               symbol is not null &&
+               ImplementsInterface(symbol, fullyQualifiedInterfaceName)
+            );
+    }
+
+    protected static bool IsSameOrSubclassOf(ITypeSymbol typeSymbol, string fullyQualifiedTypeName)
+    {
+        if (typeSymbol.ToDisplayString() == fullyQualifiedTypeName)
+            return true;
+
+        var current = typeSymbol.BaseType;
+
+        while (current != null)
+        {
+            if (current.ToDisplayString() == fullyQualifiedTypeName)
+                return true;
+
+            current = current.BaseType;
+        }
+
+        return false;
+    }
+
+    protected static bool ImplementsInterface(ITypeSymbol typeSymbol, string fullyQualifiedInterfaceName)
+    {
+        return typeSymbol.AllInterfaces.Any(i => i.ToDisplayString() == fullyQualifiedInterfaceName);
+    }
+
+    //TODO add fullyQualifiedDeclaringType
+    protected static InvocationExpressionSyntax? FindAncestorInvocationInChain(ExpressionSyntax expression,  string methodName)
+    {
+        SyntaxNode current = expression;
+
+        while (current != null)
+        {
+            while (current is MemberAccessExpressionSyntax ma)
+                current = ma.Parent;
+
+            if (current is InvocationExpressionSyntax invocation &&
+                invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+            {
+                if (memberAccess.Name.Identifier.Text == methodName)
+                {
+                    return invocation;
+                }
+            }
+
+            current = current.Parent;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Only finds invocations on concrete classes / implementations
+    /// </summary>
+    /// <param name="expression"></param>
+    /// <param name="model"></param>
+    /// <param name="methodName"></param>
+    /// <param name="fullyQualifiedDeclaringType"></param>
+    /// <returns></returns>
+    protected static InvocationExpressionSyntax? FindDescendantInvocationInChain(ExpressionSyntax expression, SemanticModel model, string methodName, string fullyQualifiedDeclaringType)
+    {
+        SyntaxNode current = expression;
+
+        while (true)
+        {
+
+            // Walk down to next invocation (skip pure property/member accesses)
+            while (current is MemberAccessExpressionSyntax ma)
+                current = ma.Expression;
+
+            if (current is not InvocationExpressionSyntax invocation ||
+            invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            {
+                break;
+            }
+
+            if (memberAccess.Name is GenericNameSyntax genericName &&
+                genericName.Identifier.Text == methodName)
+            {
+                var symbol = model.GetSymbolInfo(memberAccess.Expression).Symbol;
+
+                if (symbol is INamedTypeSymbol typeSymbol &&
+                    IsSameOrSubclassOf(typeSymbol, fullyQualifiedDeclaringType))
+                {
+                    return invocation;
+                }
+            }
+
+            current = memberAccess.Expression;
+        }
+        return null;
+    }
 }

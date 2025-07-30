@@ -1,6 +1,7 @@
 ﻿using DependencyAnalyzer.Interfaces;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Linq.Expressions;
 
 namespace DependencyAnalyzer.RegistrationParsers
 {
@@ -62,14 +63,14 @@ namespace DependencyAnalyzer.RegistrationParsers
                 if (root == null || model == null) continue;
 
                 // Find all method invocation expressions in this file (e.g., container.Register(...))
-                var invocations = FindWindsorRegisterInvocations(root, model);
-                var currentInstallerSymbols = FindWindsorInstallerSymbol(model, root);
+                var invocations = FindInvocations(root, model, "Register", "Castle.Windsor.IWindsorContainer");
+                var installerSymbols = FindImplementations(model, root, "Castle.MicroKernel.Registration.IWindsorInstaller");
 
                 foreach (var invocation in invocations)
                 {
-                    if (currentInstallerSymbols.Any())
+                    if (installerSymbols.Any())
                     {
-                        registrations.AddRange(await CreateRegistrationsForInstaller(invocation, currentInstallerSymbols, solution, model, project.Name));
+                        registrations.AddRange(await CreateRegistrationsForInstaller(invocation, installerSymbols, solution, model, project.Name));
                     }
 
                     registrations.AddRange(ParseRegistration(invocation, model, project.Name));
@@ -118,39 +119,6 @@ namespace DependencyAnalyzer.RegistrationParsers
                                         ));
         }
 
-        private static IEnumerable<InvocationExpressionSyntax> FindWindsorRegisterInvocations(SyntaxNode root, SemanticModel model)
-        {
-            return root.DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(invocation =>
-                {
-                    if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return false;
-                    if (memberAccess.Name.Identifier.Text != "Register") return false;
-
-                    var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
-                    if (symbol == null) return false;
-
-                    if (symbol.ContainingType.ToDisplayString() == "Castle.Windsor.IWindsorContainer")
-                        return true;
-
-                    // Wrapper/forwarder class: check implemented interfaces
-                    return symbol.ContainingType.AllInterfaces
-                        .Any(i => i.ToDisplayString() == "Castle.Windsor.IWindsorContainer");
-                });
-        }
-
-        private static IEnumerable<INamedTypeSymbol> FindWindsorInstallerSymbol(SemanticModel model, SyntaxNode root)
-        {
-            return root.DescendantNodes()
-               .OfType<ClassDeclarationSyntax>()
-               .Select(classDecl => model.GetDeclaredSymbol(classDecl))
-               .OfType<INamedTypeSymbol>()
-               .Where(symbol =>
-                   symbol is not null &&
-                   symbol.AllInterfaces.Any(i => i.ToDisplayString() == "Castle.MicroKernel.Registration.IWindsorInstaller")
-                );
-        }
-
         private record InstallInvocationContext(
             InvocationExpressionSyntax Invocation,
             SemanticModel SemanticModel,
@@ -172,23 +140,10 @@ namespace DependencyAnalyzer.RegistrationParsers
 
                     if (root is null || model is null) continue;
 
-                    ret.AddRange(root.DescendantNodes()
-                        .OfType<InvocationExpressionSyntax>()
-                        .Where(invocation =>
-                        {
-                            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return false;
-                            if (memberAccess.Name.Identifier.Text != "Install") return false;
+                    IEnumerable<InvocationExpressionSyntax> installInvocations = FindInvocations(root, model, "Install", "Castle.Windsor.IWindsorContainer");
 
-                            var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
-                            if (symbol is null) return false;
-
-                            if (symbol.ContainingType.ToDisplayString() == "Castle.Windsor.IWindsorContainer")
-                                return true;
-
-                            return symbol.ContainingType.AllInterfaces
-                                .Any(i => i.ToDisplayString() == "Castle.Windsor.IWindsorContainer");
-                        })
-                        .Select(invocation => new InstallInvocationContext(invocation, model, project.Name))
+                    ret.AddRange(installInvocations.Select(invocation =>
+                                    new InstallInvocationContext(invocation, model, project.Name))
                     );
                 }
             }
@@ -303,17 +258,17 @@ namespace DependencyAnalyzer.RegistrationParsers
         }
 
 
-        private ImplementationStrategy GetImplementationStrategy(ExpressionSyntax expression, SemanticModel model)
+        private ImplementationStrategy GetImplementationStrategy(ExpressionSyntax componentForExpression, SemanticModel model)
         {
             InvocationExpressionSyntax? invocation;
 
-            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "ImplementedBy");
+            invocation = FindAncestorInvocationInChain(componentForExpression, "ImplementedBy");
             if (invocation != null) {
 
                 return GetImplementedByStrat(invocation, model);
             }
 
-            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "UsingFactoryMethod");
+            invocation = FindAncestorInvocationInChain(componentForExpression, "UsingFactoryMethod");
             if(invocation != null)
             {
                 return GetUsingFactoryMethodStrat(invocation, model);
@@ -326,9 +281,9 @@ namespace DependencyAnalyzer.RegistrationParsers
             };
         }
 
-        private IEnumerable<RegistrationInfo> CreateRegistrationsFromComponentFor(ExpressionSyntax expression, GenericNameSyntax methodName, SemanticModel model, string projectName)
+        private IEnumerable<RegistrationInfo> CreateRegistrationsFromComponentFor(ExpressionSyntax componentForExpression, GenericNameSyntax methodName, SemanticModel model, string projectName)
         {
-            var lifestyle = ExtractLifestyleFromChain(expression);
+            var lifestyle = ExtractLifestyleFromChain(componentForExpression);
             var ret = new List<RegistrationInfo>();
             //go through each type argument
             foreach (var arg in methodName.TypeArgumentList.Arguments)
@@ -338,21 +293,21 @@ namespace DependencyAnalyzer.RegistrationParsers
                 if (symbol == null)
                 {
                     Console.WriteLine("Non NamedTypeSymbol found in Component.For TypeArgumentList");
-                    Console.WriteLine($"expression: {expression.ToFullString()}");
+                    Console.WriteLine($"expression: {componentForExpression.ToFullString()}");
                     continue;
                 }
 
                 switch (symbol.TypeKind)
                 {
                     case TypeKind.Interface:
-                        ret.AddRange(GetRegistrationForInterface(model, expression, symbol, lifestyle, projectName));
+                        ret.AddRange(GetRegistrationForInterface(model, componentForExpression, symbol, lifestyle, projectName));
                         break;
                     case TypeKind.Class:
-                        ret.Add(GetRegistrationForConcreteClass(model, expression, symbol, lifestyle, projectName));
+                        ret.Add(GetRegistrationForConcreteClass(model, componentForExpression, symbol, lifestyle, projectName));
                         break;
                     default:
                         Console.WriteLine("Found non class/interface argument for Component.For TypeArgumentList");
-                        Console.WriteLine($"expression: {expression.ToFullString()}");
+                        Console.WriteLine($"expression: {componentForExpression.ToFullString()}");
                         break;
                 }
             }
@@ -379,41 +334,29 @@ namespace DependencyAnalyzer.RegistrationParsers
 
             foreach (var registrationArg in registerInvocation.ArgumentList.Arguments)
             {
-                var argExpression = registrationArg.Expression;
+                var invocation = FindDescendantInvocationInChain(registrationArg.Expression, model, "For", "Castle.MicroKernel.Registration.Component");
+                if (invocation == null) continue;
 
-                // Walk down the member access chain to find the For<T> call
-                while (argExpression is InvocationExpressionSyntax methodCall &&
-                        methodCall.Expression is MemberAccessExpressionSyntax memberAccessExpr)
-                {
-                    if (memberAccessExpr.Name is GenericNameSyntax methodName &&
-                        methodName.Identifier.Text == "For" &&
+                if (invocation is not null &&
+                        invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax methodName } &&
                         methodName.TypeArgumentList.Arguments.Count > 0)
-                    {
-                        // Make sure it's Castle Windsor's Component.For<T>()
-                        var symbol = model.GetSymbolInfo(memberAccessExpr.Expression).Symbol;
-
-                        if (symbol is INamedTypeSymbol typeSymbol &&
-                            typeSymbol.ToDisplayString() == "Castle.MicroKernel.Registration.Component")
-                        {
-                            ret.AddRange(CreateRegistrationsFromComponentFor(argExpression, methodName, model, projectName));
-                        }
-                    }
-                    argExpression = memberAccessExpr.Expression;
+                {
+                    ret.AddRange(CreateRegistrationsFromComponentFor(invocation, methodName, model, projectName));
                 }
             }
             return ret;
         }
                 
-        private List<RegistrationInfo> GetRegistrationForInterface(SemanticModel model, ExpressionSyntax expression, INamedTypeSymbol registeredInterface, LifetimeTypes regType, string projectName)
+        private List<RegistrationInfo> GetRegistrationForInterface(SemanticModel model, ExpressionSyntax componentForExpression, INamedTypeSymbol registeredInterface, LifetimeTypes regType, string projectName)
         {
-            var implStrat = GetImplementationStrategy(expression, model);
+            var implStrat = GetImplementationStrategy(componentForExpression, model);
             var ret = new List<RegistrationInfo>();
 
             if (implStrat.ImplStratType != ImplementationStrategyType.ImplementedBy &&
                 implStrat.ImplStratType != ImplementationStrategyType.Factory)
             {
                 Console.WriteLine("No implementation strat found for interface");
-                Console.WriteLine($"expression {expression.ToFullString()}");
+                Console.WriteLine($"expression {componentForExpression.ToFullString()}");
                 return ret;
             }
 
@@ -436,7 +379,7 @@ namespace DependencyAnalyzer.RegistrationParsers
                 if(impType.TypeKind == TypeKind.Interface)
                 {
                     Console.WriteLine("found interface implementing interface");
-                    Console.WriteLine($"expression {expression.ToFullString()}");
+                    Console.WriteLine($"expression {componentForExpression.ToFullString()}");
                     continue;
                 }
                 ret.Add(new RegistrationInfo
@@ -453,9 +396,9 @@ namespace DependencyAnalyzer.RegistrationParsers
         }
 
         //todo maybe care about if this is implemented by something for some ungodly reason
-        private RegistrationInfo GetRegistrationForConcreteClass(SemanticModel model, ExpressionSyntax expression, INamedTypeSymbol registeredClass, LifetimeTypes regType, string projectName)
+        private RegistrationInfo GetRegistrationForConcreteClass(SemanticModel model, ExpressionSyntax componentForExpression, INamedTypeSymbol registeredClass, LifetimeTypes regType, string projectName)
         {
-            var implStrat = GetImplementationStrategy(expression, model);
+            var implStrat = GetImplementationStrategy(componentForExpression, model);
             return new RegistrationInfo
             {
                 Interface = null,
@@ -469,13 +412,13 @@ namespace DependencyAnalyzer.RegistrationParsers
         private LifetimeTypes ExtractLifestyleFromChain(ExpressionSyntax expression)
         {
             InvocationExpressionSyntax? invocation;
-            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "LifestyleTransient");
+            invocation = FindAncestorInvocationInChain(expression, "LifestyleTransient");
             if (invocation != null) return LifetimeTypes.Transient;
-            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "LifestyleSingleton");
+            invocation = FindAncestorInvocationInChain(expression, "LifestyleSingleton");
             if (invocation != null) return LifetimeTypes.Singleton;
-            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "LifestyleScoped");
+            invocation = FindAncestorInvocationInChain(expression, "LifestyleScoped");
             if (invocation != null) return LifetimeTypes.PerWebRequest;
-            invocation = ExpressionTraversalHelper.FindAncestorInvocationInChain(expression, "LifestylePerWebRequest");
+            invocation = FindAncestorInvocationInChain(expression, "LifestylePerWebRequest");
             if (invocation != null) return LifetimeTypes.PerWebRequest;
 
             return LifetimeTypes.Singleton; // 🟢 Default if no lifestyle found

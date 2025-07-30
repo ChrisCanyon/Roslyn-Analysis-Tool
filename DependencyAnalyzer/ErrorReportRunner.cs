@@ -1,4 +1,5 @@
 ﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Text;
 
 namespace DependencyAnalyzer
@@ -165,12 +166,18 @@ namespace DependencyAnalyzer
             visitedNodes.Add(node);
             path.Push(node.Class);
 
+            //Todo filter unresolvable for accurate number
             var dependencies = node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project));
-           // var uniqueInterfaces = dependencies.SelectMany(x => x.Implements).Select(x => x.ClassName).Distinct();
-           // var relevant = uniqueInterfaces.Select(x => dependencies.Where(y => y.Implements.Any(z => z.ClassName == x)).First());
+
             if(dependencies.Count() > 5)//TODO determine threshold
             {
-                sb.AppendLine($"[WARN] {node.ClassName} has {dependencies.Count()}", ConsoleColor.Yellow);
+                var note = "";
+                if(dependencies.Any(dep => dep.RegistrationInfo[project].UnresolvableImplementation))
+                {
+                    note = $"Unresolveable Implementation - This number may be exaggerated";
+                }
+                sb.Append($"[WARN] {node.ClassName} has {dependencies.Count()}", ConsoleColor.Yellow);
+                sb.Append($" | {note}", ConsoleColor.White);
             }
             foreach (var dependency in dependencies)
             {
@@ -211,6 +218,11 @@ namespace DependencyAnalyzer
             }
 
             return sb;
+        }
+
+        public void SearchForManualLifecycle(ColoredStringBuilder sb)
+        {
+
         }
 
         public ColoredStringBuilder GenerateUnusedMethodsReport(string className, string project, bool entireProject, bool allControllers)
