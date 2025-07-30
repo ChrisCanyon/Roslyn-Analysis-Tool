@@ -40,7 +40,7 @@ Analyze and visualize dependency relationships in a .NET solution. Detect proble
    git clone https://github.com/ChrisCanyon/DependencyAnalyzer.git
    cd DependencyAnalyzer
 
-2. Add your solution path
+2. Add your solution path:
   ```csharp
   SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\PathToYour\\Solution.sln");
 
