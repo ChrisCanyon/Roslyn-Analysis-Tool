@@ -1,27 +1,41 @@
-# 🧩 DependencyAnalyzer
+# DependencyAnalyzer
 
-A Roslyn-powered static analysis tool that inspects and visualizes dependency injection usage in .NET applications — with a focus on detecting **lifestyle mismatches**, **unused registrations**, and **risky dependency chains**.
-
----
-
-## 🔍 What It Does
-
-✅ Analyzes DI containers to:
-- Detect **singleton → scoped/transient** lifestyle violations  
-- Trace **transitive dependencies** across the object graph  
-- Highlight **unregistered services** and **unused registrations**  
-- Group and report issues by **project**, **node**, or **lifetime**  
-- Output high-resolution **Graphviz diagrams** and **text reports**
+Analyze and visualize dependency relationships in a .NET solution. Detect problems like lifetime mismatches, unused services, manual disposal, and more — with graphical output and a clean UI.
 
 ---
 
-## 📦 Supported Features
+## 🔧 Features
 
-- ✔️ Castle Windsor registration detection (with helper registration support)
-- ✔️ Multiple lifetime strategies (Singleton, PerWebRequest, Transient)
-- ✔️ Graph generation using DOT format (`.dot`)
-- ✔️ High-resolution SVG/PNG export with customizable styles
-- ✔️ Project-based grouping and analysis
-- ✔️ JSON export for downstream tooling
+- 🔍 **Analyze DI registrations**
+  - Castle Windsor: `Component.For<>.ImplementedBy<>.LifestyleX()`
+  - Microsoft.Extensions.DependencyInjection (M.DI): `services.AddX<>()` + factory/lambda methods
+- 📊 **Generate visual dependency graphs**
+  - Graphviz DOT & SVG for:
+    - Consumer trees
+    - Dependency trees
+    - Full solution graph
+- ⚠️ **Detect anti-patterns**
+  - Captive dependencies (e.g., singleton depending on transient)
+  - Manual disposal of injected services
+  - `new` operator used instead of DI
+  - Unused service methods
+- 💻 **Interactive UI**
+  - Search class names
+  - View dependency graphs and tree outputs
+  - Switch between analysis modes
 
 ---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- .NET 8 SDK
+- [Graphviz](https://graphviz.org/) (for rendering `.dot` files)
+
+### Setup
+
+1. Clone the repo:
+   ```bash
+   git clone https://github.com/ChrisCanyon/DependencyAnalyzer.git
+   cd DependencyAnalyzer
