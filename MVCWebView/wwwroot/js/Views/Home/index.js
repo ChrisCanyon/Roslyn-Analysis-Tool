@@ -247,8 +247,8 @@ function configureSVG(className) {
             controlIconsEnabled: true,
             fit: true,
             center: true,
-            minZoom: 0.2,
-            maxZoom: 10,
+            minZoom: 0.5,
+            maxZoom: 1000,
             contain: true,
         });
 

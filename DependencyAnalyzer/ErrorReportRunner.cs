@@ -81,6 +81,7 @@ namespace DependencyAnalyzer
             else
             {
                 sb.AppendLine($"Cycles for dependency in project {project}:", ConsoleColor.Cyan);
+                
                 foreach (var node in graph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
@@ -96,19 +97,20 @@ namespace DependencyAnalyzer
             var comparer = new FullyQualifiedNameComparer();
             if (path.Contains(node.Class, comparer))
             {
-                sb.Append($"Cycle -> ", ConsoleColor.White);
+                sb.Append($"Cycle Detected: ", ConsoleColor.White);
+                sb.AppendLine($"{node.Class.Name} <-", ConsoleColor.Red);
                 foreach (var step in path)
                 {
                     if(comparer.Equals(node.Class, step))
                     {
-                        sb.Append($"{step.Name} -> ", ConsoleColor.Red);
+                        sb.Append($"{step.Name}", ConsoleColor.Red);
+                        return;
                     }
                     else
                     {
-                        sb.Append($"{step.Name} -> ", ConsoleColor.White);
+                        sb.Append($"{step.Name} <- ", ConsoleColor.White);
                     }
                 }
-                sb.AppendLine($"{node.Class.Name}", ConsoleColor.Red);
                 return;
             }
             if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
@@ -166,18 +168,22 @@ namespace DependencyAnalyzer
             visitedNodes.Add(node);
             path.Push(node.Class);
 
-            //Todo filter unresolvable for accurate number
             var dependencies = node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project));
-
-            if(dependencies.Count() > 5)//TODO determine threshold
+            //Dont count IClassA and ClassA as 2 dependencies
+            var implmentationsOnly = dependencies.Where(x => !x.IsInterface);
+            if(implmentationsOnly.Count() > 5)//TODO determine threshold
             {
-                var note = "";
-                if(dependencies.Any(dep => dep.RegistrationInfo[project].UnresolvableImplementation))
+                var mainText = $"[WARN] {node.ClassName} has {dependencies.Count()}";
+                if (dependencies.Any(dep => dep.RegistrationInfo[project].UnresolvableImplementation))
                 {
-                    note = $"Unresolveable Implementation - This number may be exaggerated";
+                    sb.Append(mainText, ConsoleColor.Yellow);
+                    sb.AppendLine(" | Unresolveable Implementation - This number may be exaggerated", ConsoleColor.White);
                 }
-                sb.Append($"[WARN] {node.ClassName} has {dependencies.Count()}", ConsoleColor.Yellow);
-                sb.Append($" | {note}", ConsoleColor.White);
+                else
+                {
+                    sb.AppendLine(mainText, ConsoleColor.Yellow);
+                }
+
             }
             foreach (var dependency in dependencies)
             {
@@ -194,7 +200,7 @@ namespace DependencyAnalyzer
 
             if (!entireProject && !allControllers)
             {
-                sb.AppendLine($"Manually resolved dependencies in {className} depedency tree in project {project}:", ConsoleColor.Cyan);
+                sb.AppendLine($"Manually resolved dependencies in {className} dependency tree in project {project}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
                 var classNode = graph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
