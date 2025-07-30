@@ -44,5 +44,5 @@ Analyze and visualize dependency relationships in a .NET solution. Detect proble
    ```csharp
    //In MVCWebView/Program.cs
     SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\PathToYour\\Solution.sln");
-3. Thats is!
+3. That's it!
    Run the MVCWebView to see your code in a whole new way
