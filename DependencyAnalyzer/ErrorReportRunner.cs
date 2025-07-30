@@ -131,7 +131,7 @@ namespace DependencyAnalyzer
 
             if (!entireProject && !allControllers)
             {
-                sb.AppendLine($"Nodes with excessive dependenacies for {className} depedency tree in project {project}:", ConsoleColor.Cyan);
+                sb.AppendLine($"Nodes with excessive dependencies for {className} depedency tree in project {project}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
                 var classNode = graph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
@@ -146,7 +146,7 @@ namespace DependencyAnalyzer
             }
             else
             {
-                sb.AppendLine($"Nodes with excessive dependenacies in project {project}:", ConsoleColor.Cyan);
+                sb.AppendLine($"Nodes with excessive dependencies in project {project}:", ConsoleColor.Cyan);
                 foreach (var node in graph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
