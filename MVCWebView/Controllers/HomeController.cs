@@ -1,9 +1,5 @@
 using DependencyAnalyzer;
-using DependencyAnalyzer.Visualizers;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Build.Evaluation;
-using MVCWebView.Models;
-using System.Diagnostics;
 
 namespace MVCWebView.Controllers
 {

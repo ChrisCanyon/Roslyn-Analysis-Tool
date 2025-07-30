@@ -62,22 +62,15 @@
 
                     <div class="col">
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-too-many-deps">
-                            <label class="form-check-label" for="check-too-many-deps">Too Many Dependencies</label>
+                            <input class="form-check-input" type="checkbox" id="check-excessive-deps">
+                            <label class="form-check-label" for="check-excessive-deps">Excessive Dependencies</label>
                         </div>
                     </div>
 
                     <div class="col">
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-get-service">
-                            <label class="form-check-label" for="check-get-service">Manual GetService()</label>
-                        </div>
-                    </div>
-
-                    <div class="col">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-manual-dispose">
-                            <label class="form-check-label" for="check-manual-dispose">Manual Dispose</label>
+                            <input class="form-check-input" type="checkbox" id="check-manual-lifestyle">
+                            <label class="form-check-label" for="check-manual-lifestyle">Manual Lifecycle Management</label>
                         </div>
                     </div>
 
@@ -106,9 +99,8 @@
                 <pre id="output-dependency-tree">Enter a fully qualified class name and select a project</pre>
                 <pre id="output-consumer-tree" style="display: none;"></pre>
                 <pre id="output-cycles" style="display: none;"></pre>
-                <pre id="output-too-many-deps" style="display: none;"></pre>
-                <pre id="output-get-service" style="display: none;"></pre>
-                <pre id="output-manual-dispose" style="display: none;"></pre>
+                <pre id="output-excessive-deps" style="display: none;"></pre>
+                <pre id="output-manual-lifestyle" style="display: none;"></pre>
                 <pre id="output-unused-methods" style="display: none;"></pre>
                 <pre id="output-new-instead-of-injected" style="display: none;"></pre>
             </div>

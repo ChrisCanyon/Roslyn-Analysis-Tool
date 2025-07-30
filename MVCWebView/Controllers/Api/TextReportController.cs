@@ -25,10 +25,10 @@ namespace MVCWebView.Controllers.Api
         [HttpGet(nameof(GetTextReport))]
         public async Task<IActionResult> GetTextReport(
             [FromQuery] string type,
-            [FromQuery] string className,
             [FromQuery] string project,
             [FromQuery] bool entireProject,
-            [FromQuery] bool allControllers)
+            [FromQuery] bool allControllers,
+            [FromQuery] string className = "")
         {
             if (string.IsNullOrWhiteSpace(type))
                 return BadRequest("Report type is required.");
@@ -42,6 +42,7 @@ namespace MVCWebView.Controllers.Api
                 {
                     return BadRequest("Class name is required for single node reports");
                 }
+                className = _graph.Nodes.Where(x => string.Equals(x.ClassName, className, StringComparison.OrdinalIgnoreCase)).First().ClassName;
             }
 
             var reportRunner = new ErrorReportRunner(_graph);
@@ -49,9 +50,8 @@ namespace MVCWebView.Controllers.Api
             ColoredStringBuilder result = type switch
             {
                 "Cycles" => reportRunner.GenerateCycleReport(className, project, entireProject, allControllers),
-                "TooManyDependencies" => reportRunner.GenerateTooManyDependencies(className, project, entireProject, allControllers),
-                "ManualGetService" => reportRunner.GenerateManualGetServiceReport(className, project, entireProject, allControllers),
-                "ManualDispose" => reportRunner.GenerateManualDisposeReport(className, project, entireProject, allControllers),
+                "ExcessiveDependencies" => reportRunner.GenerateExcessiveDependencies(className, project, entireProject, allControllers),
+                "ManualLifecycleManagement" => reportRunner.GenerateManualLifecycleManagementReport(className, project, entireProject, allControllers),
                 "UnusedMethods" => reportRunner.GenerateUnusedMethodsReport(className, project, entireProject, allControllers),
                 "NewInsteadOfInjected" => reportRunner.GenerateNewInsteadOfInjectedReport(className, project, entireProject, allControllers),
                 _ => null

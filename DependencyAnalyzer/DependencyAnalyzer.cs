@@ -129,7 +129,7 @@ namespace DependencyAnalyzer
         {
             foreach (var node in nodeMap.Values)
             {
-                var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+                var seen = new HashSet<INamedTypeSymbol>(new FullyQualifiedNameComparer());
                 var expanded = new List<DependencyNode>();
 
                 foreach (var dependency in node.DependsOn)
@@ -163,7 +163,9 @@ namespace DependencyAnalyzer
                     {
                         foreach (var implementation in dependency.ImplementedBy)
                         {
-                            implementation.DependedOnBy.Add(node);
+                            // Avoid duplicate edges
+                            if (!implementation.DependedOnBy.Contains(node))
+                                implementation.DependedOnBy.Add(node);
                         }
                     }
                 }

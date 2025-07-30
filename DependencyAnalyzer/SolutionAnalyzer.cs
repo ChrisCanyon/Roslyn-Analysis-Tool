@@ -46,7 +46,6 @@ namespace DependencyAnalyzer
                 var registrationHelper = new MicrosoftDIRegistrationParser();
                 var registrationInfosTask = registrationHelper.GetSolutionRegistrations(s);
                 await Task.WhenAll(allTypesTask, registrationInfosTask);
-                allTypes.AddRange(await allTypesTask);
                 registrationInfos.AddRange(await registrationInfosTask);
             }
             if (usesWindsor)
@@ -54,9 +53,11 @@ namespace DependencyAnalyzer
                 var registrationHelper = new WindsorRegistrationParser();
                 var registrationInfosTask = registrationHelper.GetSolutionRegistrations(s);
                 await Task.WhenAll(allTypesTask, registrationInfosTask);
-                allTypes.AddRange(await allTypesTask);
                 registrationInfos.AddRange(await registrationInfosTask);
             }
+
+            allTypes.AddRange(await allTypesTask);
+
             workspace.CloseSolution();
             return new SolutionAnalyzer(allTypes, registrationInfos);
         }

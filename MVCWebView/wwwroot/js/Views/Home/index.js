@@ -131,9 +131,8 @@ async function loadTextReports() {
     fetchDependencyTree(); //these are special
     fetchConsumerTree(); //these are special
     fetchTextReport("Cycles", "check-cycles", "output-cycles");
-    fetchTextReport("TooManyDependencies", "check-too-many-deps", "output-too-many-deps");
-    fetchTextReport("ManualGetService", "check-get-service", "output-get-service");
-    fetchTextReport("ManualDispose", "check-manual-dispose", "output-manual-dispose");
+    fetchTextReport("ExcessiveDependencies", "check-excessive-deps", "output-excessive-deps");
+    fetchTextReport("ManualLifecycleManagement", "check-manual-lifestyle", "output-manual-lifestyle");
     fetchTextReport("UnusedMethods", "check-unused-methods", "output-unused-methods");
     fetchTextReport("NewInsteadOfInjected", "check-new-instead-of-injected", "output-new-instead-of-injected");
 };
