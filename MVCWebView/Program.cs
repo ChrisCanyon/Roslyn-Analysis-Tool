@@ -1,5 +1,4 @@
 using DependencyAnalyzer;
-using DependencyAnalyzer.RegistrationParsers;
 
 var builder = WebApplication.CreateBuilder(args);
 
