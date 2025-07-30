@@ -41,8 +41,6 @@ Analyze and visualize dependency relationships in a .NET solution. Detect proble
    cd DependencyAnalyzer
 
 2. Add your solution path:
-  ```csharp
-    //In MVCWebView/program.cs
+   ```csharp
+   //In MVCWebView/Program.cs
     SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\PathToYour\\Solution.sln");
-
-   
