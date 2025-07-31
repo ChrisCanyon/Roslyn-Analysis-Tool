@@ -1,8 +1,7 @@
-﻿using Microsoft.Build.Locator;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.MSBuild;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using DependencyAnalyzer.RegistrationParsers;
+using DependencyAnalyzer.Parsers.MicrosoftDI;
+using DependencyAnalyzer.Parsers.Windsor;
 
 namespace DependencyAnalyzer
 {
@@ -11,18 +10,14 @@ namespace DependencyAnalyzer
         public List<INamedTypeSymbol> AllTypes { get; private set; }
         public List<RegistrationInfo> RegistrationInfos { get; private set; }
 
-        public static async Task<SolutionAnalyzer> BuildSolutionAnalyzer(string solutionPath)
+        public static async Task<SolutionAnalyzer> BuildSolutionAnalyzer(Solution solution)
         {
-            MSBuildLocator.RegisterDefaults();
-            using var workspace = MSBuildWorkspace.Create();
-            var s = await workspace.OpenSolutionAsync(solutionPath);
-
-            var allTypesTask = GetAllTypesInSolutionAsync(s);
+            var allTypesTask = GetAllTypesInSolutionAsync(solution);
  
             var usesWindsor = false;
             var usesMicrosoftDi = false;
  
-            foreach (var project in s.Projects)
+            foreach (var project in solution.Projects)
             {
                 foreach (var document in project.Documents)
                 {
@@ -44,25 +39,24 @@ namespace DependencyAnalyzer
             if (usesMicrosoftDi)
             {
                 var registrationHelper = new MicrosoftDIRegistrationParser();
-                var registrationInfosTask = registrationHelper.GetSolutionRegistrations(s);
+                var registrationInfosTask = registrationHelper.GetSolutionRegistrations(solution);
                 await Task.WhenAll(allTypesTask, registrationInfosTask);
                 registrationInfos.AddRange(await registrationInfosTask);
             }
             if (usesWindsor)
             {
                 var registrationHelper = new WindsorRegistrationParser();
-                var registrationInfosTask = registrationHelper.GetSolutionRegistrations(s);
+                var registrationInfosTask = registrationHelper.GetSolutionRegistrations(solution);
                 await Task.WhenAll(allTypesTask, registrationInfosTask);
                 registrationInfos.AddRange(await registrationInfosTask);
             }
 
             allTypes.AddRange(await allTypesTask);
 
-            workspace.CloseSolution();
             return new SolutionAnalyzer(allTypes, registrationInfos);
         }
 
-        public static bool IsController(INamedTypeSymbol symbol)
+        private static bool IsController(INamedTypeSymbol symbol)
         {
             if (symbol == null) return false;
 

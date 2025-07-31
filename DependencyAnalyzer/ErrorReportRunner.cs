@@ -1,13 +1,13 @@
-﻿using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
+﻿using DependencyAnalyzer.Parsers.Windsor;
+using Microsoft.CodeAnalysis;
 using System.Text;
 
 namespace DependencyAnalyzer
 {
-    public class ErrorReportRunner(DependencyGraph graph)
+    public class ErrorReportRunner(
+        DependencyGraph dependencyGraph,
+        WindsorManualResolutionParser manualResolutionParser)
     {
-        DependencyGraph DependencyGraph = graph;
-
         public struct DependencyMismatch
         {
             public string Project;
@@ -18,7 +18,7 @@ namespace DependencyAnalyzer
         public string FindLifetimeMismatches()
         {
             var issues = new List<DependencyMismatch>();
-            foreach (var node in DependencyGraph.Nodes)
+            foreach (var node in dependencyGraph.Nodes)
             {
                 foreach (var (project, registration) in node.RegistrationInfo)
                 {
@@ -68,7 +68,7 @@ namespace DependencyAnalyzer
                 sb.AppendLine($"Cycles for {className} dependency tree in project {project}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
-                var classNode = graph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
+                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
                 if(classNode == null)
                 {
                     sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
@@ -82,7 +82,7 @@ namespace DependencyAnalyzer
             {
                 sb.AppendLine($"Cycles for dependency in project {project}:", ConsoleColor.Cyan);
                 
-                foreach (var node in graph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
+                foreach (var node in dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
                     SearchForCycle(node, project, currentPath, visited, sb);
@@ -136,7 +136,7 @@ namespace DependencyAnalyzer
                 sb.AppendLine($"Nodes with excessive dependencies for {className} depedency tree in project {project}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
-                var classNode = graph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
+                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
                 if (classNode == null)
                 {
                     sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
@@ -149,7 +149,7 @@ namespace DependencyAnalyzer
             else
             {
                 sb.AppendLine($"Nodes with excessive dependencies in project {project}:", ConsoleColor.Cyan);
-                foreach (var node in graph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
+                foreach (var node in dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
                     SearchForExcessiveDependencies(node, project, currentPath, visited, sb);
@@ -203,32 +203,37 @@ namespace DependencyAnalyzer
                 sb.AppendLine($"Manually resolved dependencies in {className} dependency tree in project {project}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
-                var classNode = graph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
+                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
                 if (classNode == null)
                 {
                     sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
                 }
                 else
                 {
-                    // todo SearchForExcessiveDependencies(classNode, project, currentPath, visited, sb);
+                    SearchForManualLifecycle(classNode, project, currentPath, visited, sb);
                 }
             }
             else
             {
                 sb.AppendLine($"Manually resolved dependencies in project {project}:", ConsoleColor.Cyan);
-                foreach (var node in graph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
+                foreach (var node in dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
-                    //todo SearchForExcessiveDependencies(node, project, currentPath, visited, sb);
+                    SearchForManualLifecycle(node, project, currentPath, visited, sb);
                 }
             }
 
             return sb;
         }
 
-        public void SearchForManualLifecycle(ColoredStringBuilder sb)
+        public void SearchForManualLifecycle(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
         {
+            var x = manualResolutionParser.FindAllManuallyResolvedSymbols();
 
+            foreach(var y in x)
+            {
+                sb.AppendLine($"We done did it {y}", ConsoleColor.Green);
+            }
         }
 
         public ColoredStringBuilder GenerateUnusedMethodsReport(string className, string project, bool entireProject, bool allControllers)

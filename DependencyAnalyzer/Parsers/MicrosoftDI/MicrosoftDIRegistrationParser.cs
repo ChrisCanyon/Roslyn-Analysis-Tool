@@ -2,7 +2,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace DependencyAnalyzer.RegistrationParsers;
+namespace DependencyAnalyzer.Parsers.MicrosoftDI;
 
 public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
 {
@@ -73,7 +73,7 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
                 }
 
                 // AddX<TInterface, TImpl>(MethodGroup)
-                if ((methodName is "AddScoped" or "AddTransient" or "AddSingleton") &&
+                if (methodName is "AddScoped" or "AddTransient" or "AddSingleton" &&
                     symbol.IsGenericMethod &&
                     symbol.TypeArguments.Length == 2 &&
                     args?.Count == 1 &&
@@ -171,7 +171,7 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
             TryAddHttpClient(project, memberAccess.Name, model, registrations);
 
             // AddX(() => new Impl())
-            if ((methodName is "AddScoped" or "AddTransient" or "AddSingleton") &&
+            if (methodName is "AddScoped" or "AddTransient" or "AddSingleton" &&
                 args?.Count == 1 &&
                 args?[0].Expression is LambdaExpressionSyntax lambda)
             {

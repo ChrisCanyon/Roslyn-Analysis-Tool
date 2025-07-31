@@ -9,17 +9,15 @@ namespace MVCWebView.Controllers.Api
     [ApiController]
     public class TextReportController : ControllerBase
     {
-        DependencyGraph _graph;
-        SolutionAnalyzer _solutionAnalyzer;
-        DependencyAnalyzer.DependencyAnalyzer _dependencyAnalyzer;
-
+        readonly DependencyGraph _graph;
+        readonly ErrorReportRunner _runner;
         public TextReportController(
             DependencyGraph graph,
-            SolutionAnalyzer solutionAnalyzer,
-            DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer
+            ErrorReportRunner runner
             )
         {
             _graph = graph;
+            _runner = runner;
         }
 
         [HttpGet(nameof(GetTextReport))]
@@ -45,15 +43,14 @@ namespace MVCWebView.Controllers.Api
                 className = _graph.Nodes.Where(x => string.Equals(x.ClassName, className, StringComparison.OrdinalIgnoreCase)).First().ClassName;
             }
 
-            var reportRunner = new ErrorReportRunner(_graph);
 
             ColoredStringBuilder result = type switch
             {
-                "Cycles" => reportRunner.GenerateCycleReport(className, project, entireProject, allControllers),
-                "ExcessiveDependencies" => reportRunner.GenerateExcessiveDependencies(className, project, entireProject, allControllers),
-                "ManualLifecycleManagement" => reportRunner.GenerateManualLifecycleManagementReport(className, project, entireProject, allControllers),
-                "UnusedMethods" => reportRunner.GenerateUnusedMethodsReport(className, project, entireProject, allControllers),
-                "NewInsteadOfInjected" => reportRunner.GenerateNewInsteadOfInjectedReport(className, project, entireProject, allControllers),
+                "Cycles" => _runner.GenerateCycleReport(className, project, entireProject, allControllers),
+                "ExcessiveDependencies" => _runner.GenerateExcessiveDependencies(className, project, entireProject, allControllers),
+                "ManualLifecycleManagement" => _runner.GenerateManualLifecycleManagementReport(className, project, entireProject, allControllers),
+                "UnusedMethods" => _runner.GenerateUnusedMethodsReport(className, project, entireProject, allControllers),
+                "NewInsteadOfInjected" => _runner.GenerateNewInsteadOfInjectedReport(className, project, entireProject, allControllers),
                 _ => null
             };
 

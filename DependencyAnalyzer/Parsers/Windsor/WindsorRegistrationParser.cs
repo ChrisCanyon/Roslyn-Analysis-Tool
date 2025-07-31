@@ -3,7 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Linq.Expressions;
 
-namespace DependencyAnalyzer.RegistrationParsers
+namespace DependencyAnalyzer.Parsers.Windsor
 {
     /// <summary>
     /// Parses and extracts registration information from Windsor container usage within a project.
@@ -30,12 +30,12 @@ namespace DependencyAnalyzer.RegistrationParsers
             {
                 if (project.Name.ToLower().Contains("test")) continue;
                 //no async for debug
-            #if DEBUG
+#if DEBUG
                 var projectRegistrations = await GetRegistrationsFromProjectAsync(project, solution);
                 ret.AddRange(projectRegistrations);
-            #else
+#else
                 registrationTasks.Add(GetRegistrationsFromProjectAsync(project, solution));
-            #endif
+#endif
             }
 
             await Task.WhenAll(registrationTasks.ToArray());
@@ -88,7 +88,7 @@ namespace DependencyAnalyzer.RegistrationParsers
             InvocationExpressionSyntax invocation,
             IEnumerable<INamedTypeSymbol> installers,
             Solution solution,
-            SemanticModel model, 
+            SemanticModel model,
             string project)
         {
             var comparer = new FullyQualifiedNameComparer();
@@ -128,7 +128,7 @@ namespace DependencyAnalyzer.RegistrationParsers
         private IEnumerable<InstallInvocationContext> _windsorInstallContexts;
         private async Task<IEnumerable<InstallInvocationContext>> FindWindsorInstallInvocationContextsForSolution(Solution solution)
         {
-            if(_windsorInstallContexts != null) return _windsorInstallContexts;
+            if (_windsorInstallContexts != null) return _windsorInstallContexts;
             var ret = new List<InstallInvocationContext>();
 
             foreach (var project in solution.Projects)
@@ -263,17 +263,18 @@ namespace DependencyAnalyzer.RegistrationParsers
             InvocationExpressionSyntax? invocation;
 
             invocation = FindAncestorInvocationInChain(componentForExpression, "ImplementedBy");
-            if (invocation != null) {
+            if (invocation != null)
+            {
 
                 return GetImplementedByStrat(invocation, model);
             }
 
             invocation = FindAncestorInvocationInChain(componentForExpression, "UsingFactoryMethod");
-            if(invocation != null)
+            if (invocation != null)
             {
                 return GetUsingFactoryMethodStrat(invocation, model);
             }
-            
+
             return new ImplementationStrategy
             {
                 ImplReturnTypes = [],
@@ -346,7 +347,7 @@ namespace DependencyAnalyzer.RegistrationParsers
             }
             return ret;
         }
-                
+
         private List<RegistrationInfo> GetRegistrationForInterface(SemanticModel model, ExpressionSyntax componentForExpression, INamedTypeSymbol registeredInterface, LifetimeTypes regType, string projectName)
         {
             var implStrat = GetImplementationStrategy(componentForExpression, model);
@@ -376,7 +377,7 @@ namespace DependencyAnalyzer.RegistrationParsers
 
             foreach (var impType in implStrat.ImplReturnTypes)
             {
-                if(impType.TypeKind == TypeKind.Interface)
+                if (impType.TypeKind == TypeKind.Interface)
                 {
                     Console.WriteLine("found interface implementing interface");
                     Console.WriteLine($"expression {componentForExpression.ToFullString()}");

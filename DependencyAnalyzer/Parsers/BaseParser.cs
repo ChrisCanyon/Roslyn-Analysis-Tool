@@ -1,7 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace DependencyAnalyzer.RegistrationParsers;
+namespace DependencyAnalyzer.Parsers;
 
 public abstract class BaseParser
 {
