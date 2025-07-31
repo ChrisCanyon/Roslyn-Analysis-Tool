@@ -1,4 +1,8 @@
 using DependencyAnalyzer;
+using DependencyAnalyzer.Parsers.MicrosoftDI;
+using DependencyAnalyzer.Parsers.Windsor;
+using Microsoft.Build.Locator;
+using Microsoft.CodeAnalysis.MSBuild;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -6,15 +10,27 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews()
     .AddRazorRuntimeCompilation();
 
-SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\onlineservices\\Source\\InSite.sln");
-//SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\onlineservices\\Source\\Prepaid\\Prepaid.sln");
-//SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\TylerDev\\Capital\\Source\\Capital.sln");
+MSBuildLocator.RegisterDefaults();
+using var workspace = MSBuildWorkspace.Create();
+
+string solutionPath = "C:\\TylerDev\\eagle-vitals\\eagle-vitals.sln";
+//string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\InSite.sln";
+//string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\Prepaid\\Prepaid.sln";
+//string solutionPath = "C:\\TylerDev\\Capital\\Source\\Capital.sln";
+
+//Generate full dependency graph for project and register as single to cache it
+var s = await workspace.OpenSolutionAsync(solutionPath);
+SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer(s);
 DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
 DependencyGraph graph = dependencyAnalyzer.BuildFullDependencyGraph();
 
 builder.Services.AddSingleton(solutionAnalyzer);
 builder.Services.AddSingleton(dependencyAnalyzer);
 builder.Services.AddSingleton(graph);
+builder.Services.AddSingleton(s);
+builder.Services.AddScoped<ErrorReportRunner>();
+builder.Services.AddScoped<WindsorManualResolutionParser>();
+builder.Services.AddScoped<MDIManualResolutionParser>(); 
 
 var app = builder.Build();
 
@@ -22,7 +38,6 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
