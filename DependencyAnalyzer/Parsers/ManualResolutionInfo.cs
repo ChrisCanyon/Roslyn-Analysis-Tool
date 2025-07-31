@@ -2,10 +2,16 @@
 
 namespace DependencyAnalyzer.Parsers
 {
-    public record ManualResolutionInfo(
-            INamedTypeSymbol ResolvedType,
-            string Project,
-            string File,
-            string CodeSnippet
+    public enum ManualLifetimeInteractionKind
+    {
+        Resolve,
+        Dispose
+    }
+    public record ManualLifetimeInteractionInfo(
+        INamedTypeSymbol Type,
+        string Project,
+        string File,
+        string CodeSnippet,
+        ManualLifetimeInteractionKind Kind
     );
 }

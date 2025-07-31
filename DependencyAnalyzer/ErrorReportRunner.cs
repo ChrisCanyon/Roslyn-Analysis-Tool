@@ -235,22 +235,28 @@ namespace DependencyAnalyzer
             visitedNodes.Add(node);
             path.Push(node.Class);
 
-            List<ManualResolutionInfo> allResolvedSymbols = manualResolutionParser.ManuallyResolvedSymbols;
+            var nodeRegistration = node.RegistrationInfo[project];
+
+            List<ManualLifetimeInteractionInfo> allResolvedSymbols = manualResolutionParser.ManuallyResolvedSymbols;
             foreach(var resolvedSymbol in allResolvedSymbols.Where(x => x.Project == project && 
-                                            comparer.Equals(node.Class, x.ResolvedType)))
+                                            comparer.Equals(node.Class, x.Type)))
             {
-                sb.AppendLine($"{node.ClassName} manual resolutions:", ConsoleColor.Yellow);
+                sb.AppendLine($"{node.ClassName} manual resolutions", ConsoleColor.Yellow);
                 sb.AppendLine($"\tIn {resolvedSymbol.File} {node.ClassName}", ConsoleColor.White);
-                sb.AppendLine($"\t\t{resolvedSymbol.CodeSnippet}", ConsoleColor.Gray);
+                sb.AppendLine($"\t{resolvedSymbol.CodeSnippet}", ConsoleColor.Gray);
             }
 
-            List<ManualResolutionInfo> allDisposedSymbols = manualResolutionParser.ManuallyDisposedSymbols;
+            List<ManualLifetimeInteractionInfo> allDisposedSymbols = manualResolutionParser.ManuallyDisposedSymbols;
             foreach (var disposedSymbol in allDisposedSymbols.Where(x => x.Project == project &&
-                                                        comparer.Equals(node.Class, x.ResolvedType)))
+                                                        comparer.Equals(node.Class, x.Type)))
             {
-                sb.AppendLine($"{node.ClassName} manual resolutions:", ConsoleColor.Yellow);
+                if(nodeRegistration.Lifetime > LifetimeTypes.Transient)
+                {
+                    sb.AppendLine($"~~WARN {nodeRegistration.Lifetime} Potential Early Disposal~~", ConsoleColor.Red);
+                }
+                sb.AppendLine($"{node.ClassName} manual Disposal/Release:", ConsoleColor.Yellow);
                 sb.AppendLine($"\tIn {disposedSymbol.File} {node.ClassName}", ConsoleColor.White);
-                sb.AppendLine($"\t\t{disposedSymbol.CodeSnippet}", ConsoleColor.Gray);
+                sb.AppendLine($"\t{disposedSymbol.CodeSnippet}", ConsoleColor.Gray);
             }
 
             foreach (var dependency in node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project)))

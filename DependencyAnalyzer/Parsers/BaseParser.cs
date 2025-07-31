@@ -100,6 +100,34 @@ public abstract class BaseParser
             }).ToList();
     }
 
+    protected static INamedTypeSymbol? GetCallingClassFromInvocation(InvocationExpressionSyntax invocation, SemanticModel model)
+    {
+        ExpressionSyntax? receiverExpr = null;
+
+        if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+        {
+            receiverExpr = memberAccess.Expression;
+        }
+        else if (invocation.Expression is IdentifierNameSyntax)
+        {
+            // Handle parameterless call like "Dispose()" in class scope
+            receiverExpr = invocation.Expression;
+        }
+
+        if (receiverExpr != null)
+        {
+            var type = model.GetTypeInfo(receiverExpr).Type;
+
+            if (type is INamedTypeSymbol namedType)
+                return namedType;
+        }
+
+        Console.WriteLine("[WARN] Could not determine calling class for invocation:");
+        Console.WriteLine($"\t{invocation.ToFullString()}");
+
+        return null;
+    }
+
     protected static IEnumerable<INamedTypeSymbol> FindImplementations(SemanticModel model, SyntaxNode root, string fullyQualifiedInterfaceName)
     {
         return root.DescendantNodes()
