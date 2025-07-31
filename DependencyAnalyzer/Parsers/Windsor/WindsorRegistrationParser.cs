@@ -57,12 +57,10 @@ namespace DependencyAnalyzer.Parsers.Windsor
             {
                 var root = await doc.GetSyntaxRootAsync();
 
-                // Get the semantic model for the current document (lets us resolve symbols)
                 var model = await doc.GetSemanticModelAsync();
 
                 if (root == null || model == null) continue;
 
-                // Find all method invocation expressions in this file (e.g., container.Register(...))
                 var invocations = FindInvocations(root, model, "Register", "Castle.Windsor.IWindsorContainer");
                 var installerSymbols = FindImplementations(model, root, "Castle.MicroKernel.Registration.IWindsorInstaller");
 

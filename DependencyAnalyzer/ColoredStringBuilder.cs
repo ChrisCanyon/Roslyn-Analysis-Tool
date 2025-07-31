@@ -57,7 +57,7 @@ public class ColoredStringBuilder
         {
             sb.Append(
                 $"<span style=\"color: {ConsoleColorToHexString(segment.Color)};\">" +
-                    $"{segment.Text}" +
+                    $"{System.Net.WebUtility.HtmlEncode(segment.Text)}" +
                 $"</span>");
         }
         return sb.ToString();

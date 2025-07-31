@@ -10,7 +10,7 @@ string solutionPath = "C:\\TylerDev\\eagle-vitals\\eagle-vitals.sln";
 
 using var workspace = MSBuildWorkspace.Create();
 var s = await workspace.OpenSolutionAsync(solutionPath);
-var solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer(s);
+var solutionAnalyzer = await SolutionAnalyzer.Build(s);
 var dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
 var graph = dependencyAnalyzer.BuildFullDependencyGraph();
 

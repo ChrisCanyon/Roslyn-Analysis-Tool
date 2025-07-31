@@ -69,18 +69,34 @@ public abstract class BaseParser
             .OfType<InvocationExpressionSyntax>()
             .Where(invocation =>
             {
-                if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return false;
-                if (memberAccess.Name.Identifier.Text != methodName) return false;
+                if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) 
+                        return false;
+                if (memberAccess.Name.Identifier.Text != methodName) 
+                        return false;
 
-                var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
-                if (symbol == null) return false;
+                var method = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                if (method == null) return false;
 
-                if (symbol.ContainingType.ToDisplayString() == fullyQualifiedDeclaringType)
+                if (IsSameOrSubclassOf(method.ContainingType, fullyQualifiedDeclaringType))
                     return true;
 
-                // Wrapper/forwarder class: check implemented interfaces
-                return symbol.ContainingType.AllInterfaces
-                    .Any(i => i.ToDisplayString() == fullyQualifiedDeclaringType);
+                if (ImplementsInterface(method.ContainingType, fullyQualifiedDeclaringType))
+                    return true;
+
+                if (method.IsExtensionMethod)
+                {
+                    var reducedFrom = method.ReducedFrom;
+
+                    var extendedType = reducedFrom?.Parameters.FirstOrDefault()?.Type;
+                    if (extendedType != null)
+                    {
+                        if (IsSameOrSubclassOf(extendedType, fullyQualifiedDeclaringType) ||
+                            ImplementsInterface(extendedType, fullyQualifiedDeclaringType))
+                            return true;
+                    }
+                }
+
+                return false;
             }).ToList();
     }
 
@@ -146,11 +162,6 @@ public abstract class BaseParser
     /// <summary>
     /// Only finds invocations on concrete classes / implementations
     /// </summary>
-    /// <param name="expression"></param>
-    /// <param name="model"></param>
-    /// <param name="methodName"></param>
-    /// <param name="fullyQualifiedDeclaringType"></param>
-    /// <returns></returns>
     protected static InvocationExpressionSyntax? FindDescendantInvocationInChain(ExpressionSyntax expression, SemanticModel model, string methodName, string fullyQualifiedDeclaringType)
     {
         SyntaxNode current = expression;
@@ -183,5 +194,53 @@ public abstract class BaseParser
             current = memberAccess.Expression;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Finds type arguments in a method
+    /// i.e. Method<T>() Returns the Type of what was passed for T
+    /// </summary>
+    protected static IEnumerable<INamedTypeSymbol> GetTypeArgumentsFromInvocation(InvocationExpressionSyntax invocation, SemanticModel model)
+    {
+        var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+        if (symbol == null)
+            return Enumerable.Empty<INamedTypeSymbol>();
+
+        return symbol.TypeArguments.OfType<INamedTypeSymbol>();
+    }
+
+    /// <summary>
+    /// Finds arguments in a method that are of type System.Type.
+    /// i.e. Method(string,Type,int) Returns the Type of what was passed as the second paramter
+    /// </summary>
+    protected static IEnumerable<INamedTypeSymbol> GetTypeArgumentsFromInvocationArguments(InvocationExpressionSyntax invocation, SemanticModel model)
+    {
+        var ret = new List<INamedTypeSymbol>();
+        var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+        if (symbol == null)
+            return Enumerable.Empty<INamedTypeSymbol>();
+
+        foreach (var arg in invocation.ArgumentList.Arguments)
+        {
+            var typeInfo = model.GetTypeInfo(arg.Expression);
+
+            if (typeInfo.Type?.ToDisplayString() == "System.Type")
+            {
+                if (arg.Expression is TypeOfExpressionSyntax typeofExpr)
+                {
+                    var actualType = model.GetTypeInfo(typeofExpr.Type).Type as INamedTypeSymbol;
+                    if (actualType != null)
+                    {
+                        ret.Add(actualType);
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[WARN] Could not resolve actual type of System.Type Argument:\n\t{invocation.ToFullString()}");
+                }
+            }
+        }
+       
+        return ret;
     }
 }

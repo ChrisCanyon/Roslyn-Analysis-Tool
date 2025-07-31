@@ -1,4 +1,4 @@
-﻿using DependencyAnalyzer.Parsers.Windsor;
+﻿using DependencyAnalyzer.Parsers;
 using Microsoft.CodeAnalysis;
 using System.Text;
 
@@ -6,7 +6,7 @@ namespace DependencyAnalyzer
 {
     public class ErrorReportRunner(
         DependencyGraph dependencyGraph,
-        WindsorManualResolutionParser manualResolutionParser)
+        ManualResolutionParser manualResolutionParser)
     {
         public struct DependencyMismatch
         {
@@ -228,11 +228,34 @@ namespace DependencyAnalyzer
 
         public void SearchForManualLifecycle(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
         {
-            var x = manualResolutionParser.FindAllManuallyResolvedSymbols();
+            var comparer = new FullyQualifiedNameComparer();
+            if (path.Contains(node.Class, comparer)) return;
+            if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
 
-            foreach(var y in x)
+            visitedNodes.Add(node);
+            path.Push(node.Class);
+
+            List<ManualResolutionInfo> allResolvedSymbols = manualResolutionParser.ManuallyResolvedSymbols;
+            foreach(var resolvedSymbol in allResolvedSymbols.Where(x => x.Project == project && 
+                                            comparer.Equals(node.Class, x.ResolvedType)))
             {
-                sb.AppendLine($"We done did it {y}", ConsoleColor.Green);
+                sb.AppendLine($"{node.ClassName} manual resolutions:", ConsoleColor.Yellow);
+                sb.AppendLine($"\tIn {resolvedSymbol.File} {node.ClassName}", ConsoleColor.White);
+                sb.AppendLine($"\t\t{resolvedSymbol.CodeSnippet}", ConsoleColor.Gray);
+            }
+
+            List<ManualResolutionInfo> allDisposedSymbols = manualResolutionParser.ManuallyDisposedSymbols;
+            foreach (var disposedSymbol in allDisposedSymbols.Where(x => x.Project == project &&
+                                                        comparer.Equals(node.Class, x.ResolvedType)))
+            {
+                sb.AppendLine($"{node.ClassName} manual resolutions:", ConsoleColor.Yellow);
+                sb.AppendLine($"\tIn {disposedSymbol.File} {node.ClassName}", ConsoleColor.White);
+                sb.AppendLine($"\t\t{disposedSymbol.CodeSnippet}", ConsoleColor.Gray);
+            }
+
+            foreach (var dependency in node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project)))
+            {
+                SearchForManualLifecycle(node, project, path, visitedNodes, sb);
             }
         }
 

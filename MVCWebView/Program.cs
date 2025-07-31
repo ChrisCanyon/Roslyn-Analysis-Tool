@@ -1,6 +1,5 @@
 using DependencyAnalyzer;
-using DependencyAnalyzer.Parsers.MicrosoftDI;
-using DependencyAnalyzer.Parsers.Windsor;
+using DependencyAnalyzer.Parsers;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis.MSBuild;
 
@@ -13,14 +12,15 @@ builder.Services.AddControllersWithViews()
 MSBuildLocator.RegisterDefaults();
 using var workspace = MSBuildWorkspace.Create();
 
-string solutionPath = "C:\\TylerDev\\eagle-vitals\\eagle-vitals.sln";
-//string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\InSite.sln";
+//string solutionPath = "C:\\TylerDev\\eagle-vitals\\eagle-vitals.sln";
+string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\InSite.sln";
 //string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\Prepaid\\Prepaid.sln";
 //string solutionPath = "C:\\TylerDev\\Capital\\Source\\Capital.sln";
 
 //Generate full dependency graph for project and register as single to cache it
 var s = await workspace.OpenSolutionAsync(solutionPath);
-SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer(s);
+ManualResolutionParser manParse = await ManualResolutionParser.Build(s);
+SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.Build(s);
 DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
 DependencyGraph graph = dependencyAnalyzer.BuildFullDependencyGraph();
 
@@ -29,8 +29,7 @@ builder.Services.AddSingleton(dependencyAnalyzer);
 builder.Services.AddSingleton(graph);
 builder.Services.AddSingleton(s);
 builder.Services.AddScoped<ErrorReportRunner>();
-builder.Services.AddScoped<WindsorManualResolutionParser>();
-builder.Services.AddScoped<MDIManualResolutionParser>(); 
+builder.Services.AddSingleton(manParse);
 
 var app = builder.Build();
 

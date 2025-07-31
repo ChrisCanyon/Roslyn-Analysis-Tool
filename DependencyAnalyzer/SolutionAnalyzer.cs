@@ -10,7 +10,7 @@ namespace DependencyAnalyzer
         public List<INamedTypeSymbol> AllTypes { get; private set; }
         public List<RegistrationInfo> RegistrationInfos { get; private set; }
 
-        public static async Task<SolutionAnalyzer> BuildSolutionAnalyzer(Solution solution)
+        public static async Task<SolutionAnalyzer> Build(Solution solution)
         {
             var allTypesTask = GetAllTypesInSolutionAsync(solution);
  
