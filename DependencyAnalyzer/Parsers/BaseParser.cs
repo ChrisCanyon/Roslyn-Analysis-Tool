@@ -239,7 +239,8 @@ public abstract class BaseParser
 
     /// <summary>
     /// Finds arguments in a method that are of type System.Type.
-    /// i.e. Method(string,Type,int) Returns the Type of what was passed as the second paramter
+    /// i.e. Method(string,Type,int) Returns the Type of what was passed as the second paramter.
+    /// Method("test", typeof(String), 3) returns String
     /// </summary>
     protected static IEnumerable<INamedTypeSymbol> GetTypeArgumentsFromInvocationArguments(InvocationExpressionSyntax invocation, SemanticModel model)
     {
