@@ -1,4 +1,4 @@
-# DependencyAnalyzer
+# Roslyn Analysis Tool (RAT)
 
 Analyze and visualize dependency relationships in a .NET solution. Detect problems like lifetime mismatches, unused services, manual disposal, and more — with graphical output and a clean UI.
 
