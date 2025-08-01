@@ -16,6 +16,12 @@ public class ColoredStringBuilder
 {
     private readonly List<ColoredSegment> _segments = new();
 
+    public ColoredStringBuilder Append(ColoredStringBuilder sb)
+    {
+        _segments.AddRange(sb._segments);
+        return this;
+    }
+
     public ColoredStringBuilder Append(string text, ConsoleColor color)
     {
         _segments.Add(new ColoredSegment(color, text));

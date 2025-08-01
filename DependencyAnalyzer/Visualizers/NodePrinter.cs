@@ -8,7 +8,7 @@ namespace DependencyAnalyzer.Visualizers
         public static ColoredStringBuilder PrintDependencyTreeForProject(DependencyNode startNode, string project)
         {
             var sb = new ColoredStringBuilder();
-            sb.AppendLine($"OBJECTS {startNode.ClassName} IS DEPENDENT ON FOR PROJECT {project}", ConsoleColor.Blue);
+            sb.AppendLine($"OBJECTS {startNode.ClassName} IS DEPENDENT ON FOR PROJECT {project}", ConsoleColor.Cyan);
             var currentPath = new Stack<INamedTypeSymbol>();
             var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             TraverseDependencyGraph(startNode, project, rootLifetime, "", true, currentPath, sb);
@@ -83,7 +83,7 @@ namespace DependencyAnalyzer.Visualizers
         public static ColoredStringBuilder PrintConsumerTreeForProject(DependencyNode startNode, string project)
         {
             var sb = new ColoredStringBuilder();
-            sb.AppendLine($"OBJECTS DEPENDENT ON {startNode.ClassName} FOR PROJECT {project}", ConsoleColor.Blue);
+            sb.AppendLine($"OBJECTS DEPENDENT ON {startNode.ClassName} FOR PROJECT {project}", ConsoleColor.Cyan);
             var currentPath = new Stack<INamedTypeSymbol>();
             var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             TraverseConsumerGraph(startNode, project, rootLifetime, "", true, currentPath, sb);

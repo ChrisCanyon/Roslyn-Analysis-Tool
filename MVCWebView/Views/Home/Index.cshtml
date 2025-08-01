@@ -4,6 +4,11 @@
 <script src="~/js/Views/Home/index.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+<!-- Loading --> 
+<div id="loadingOverlay">
+    <img id="loadingSpinner" src="/images/loading.gif" alt="Loading..." />
+</div>
+
 <div class="bg-light p-2 border-bottom" style="position: relative; height: 55px;">
     <div style="position: absolute; left: 0; padding-left: 1em;">
         <button class="btn btn-outline-secondary" onclick="loadPrevious()">&lt; Back</button>
@@ -27,9 +32,6 @@
 <div class="container-fluid overflow-hidden">
     <div class="d-flex flex-row" style="height: calc(100vh - 70px);">
         <div id="graphPanel" class="flex-grow-1 overflow-auto p-3 bg-white">
-            <div id="loadingSpinner" style="display: none;">
-                <div class="spinner"></div>
-            </div>
             <div id="svgContainer" style="height: 100%; overflow: auto;">
                 <div id="svgOutput" style="height: 100%">Enter a fully qualified class name and select a project</div>
             </div>
@@ -37,78 +39,86 @@
 
         <div class="bg-black text-light p-3"
             style="overflow: auto; max-height: 100%; max-width: 40vw;">
-            <div class="text-options-container container py-3">
-                <div class="row row-cols-1 row-cols-md-3 g-2">
-                    <div class="col">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-dependency-tree" checked>
-                            <label class="form-check-label" for="check-dependency-tree">Dependency Tree</label>
-                        </div>
-                    </div>
+            <div id="outputContainer" class="pre-wrap-container mono p-2 bg-black text-light">
+                <button class="btn btn-sm btn-secondary mb-1"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#output-lifetime-violations"
+                        aria-expanded="false">
+                    Lifetime Violations <span class="toggle-icon ms-1"></span>
+                </button>
+                <pre id="output-lifetime-violations" class="collapse"></pre>
+                
+                <button class="btn btn-sm btn-secondary mb-1"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#output-manual-lifestyle"
+                        aria-expanded="false">
+                    Manual Lifestyle <span class="toggle-icon ms-1"></span>
+                </button>
+                <pre id="output-manual-lifestyle" class="collapse"></pre>
 
-                    <div class="col">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-consumer-tree" checked>
-                            <label class="form-check-label" for="check-consumer-tree">Consumer Tree</label>
-                        </div>
-                    </div>
+                <button class="btn btn-sm btn-secondary mb-1"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#output-cycles"
+                        aria-expanded="false">
+                    Cycles <span class="toggle-icon ms-1"></span>
+                </button>
+                <pre id="output-cycles" class="collapse"></pre>
 
-                    <div class="col">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-cycles" checked>
-                            <label class="form-check-label" for="check-cycles">Cycles</label>
-                        </div>
-                    </div>
+                <button class="btn btn-sm btn-secondary mb-1"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#output-excessive-deps"
+                        aria-expanded="false">
+                    Excessive Deps <span class="toggle-icon ms-1"></span>
+                </button>
+                <pre id="output-excessive-deps" class="collapse"></pre>
 
-                    <div class="col">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-excessive-deps" checked>
-                            <label class="form-check-label" for="check-excessive-deps">Excessive Dependencies</label>
-                        </div>
-                    </div>
+                <button class="btn btn-sm btn-secondary mb-1"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#output-unused-methods"
+                        aria-expanded="false">
+                    Unused Methods <span class="toggle-icon ms-1"></span>
+                </button>
+                <pre id="output-unused-methods" class="collapse"></pre>
 
-                    <div class="col">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-manual-lifestyle" checked>
-                            <label class="form-check-label" for="check-manual-lifestyle">Manual Lifecycle Management</label>
-                        </div>
-                    </div>
-
-                    <div class="col">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-unused-methods" disabled>
-                            <label class="form-check-label" for="check-unused-methods">Unused Methods</label>
-                        </div>
-                    </div>
-
-                    <div class="col">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="check-new-instead-of-injected" disabled>
-                            <label class="form-check-label" for="check-new-instead-of-injected">`new` Instead of Injected</label>
-                        </div>
-                    </div>
-
-                    <div class="col">
-                        <div class="form-check">
-                            <button class="btn btn-primary" onclick="loadTextReports()"> Reload Reports </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div id="outputContainer" class="pre-wrap-container  mono p-2 bg-black text-light">
-                <pre id="output-dependency-tree">Enter a fully qualified class name and select a project</pre>
-                <pre id="output-consumer-tree" style="display: none;"></pre>
-                <pre id="output-cycles" style="display: none;"></pre>
-                <pre id="output-excessive-deps" style="display: none;"></pre>
-                <pre id="output-manual-lifestyle" style="display: none;"></pre>
-                <pre id="output-unused-methods" style="display: none;"></pre>
-                <pre id="output-new-instead-of-injected" style="display: none;"></pre>
+                <button class="btn btn-sm btn-secondary mb-1"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#output-manual-instantiation"
+                        aria-expanded="false">
+                    Manual Instantiation<span class="toggle-icon ms-1"></span>
+                </button>
+                <pre id="output-manual-instantiation" class="collapse"></pre>
             </div>
         </div>
     </div>
 </div>
 
 <style>
+    button.btn.btn-sm.btn-secondary {
+        width: 100%;
+        text-align: left;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    pre.collapse {
+        width: 100%;
+        white-space: pre-wrap; /* so long lines wrap */
+        margin-bottom: 1rem; /* optional spacing */
+    }
+
+    button[aria-expanded="false"] .toggle-icon::before {
+        content: "›"; /* or "▶" */
+    }
+
+    button[aria-expanded="true"] .toggle-icon::before {
+        content: "⌄"; /* or "▼" */
+    }
+
+    #outputContainer .button{
+        width: 100%
+    }
+
     .pre-wrap-container pre {
         white-space: pre-wrap;
         word-wrap: break-word;
@@ -117,26 +127,19 @@
     .mono {
         font-family: monospace;
     }
-    #loadingSpinner {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      background: rgba(255,255,255,0.6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 9999;
-    }
 
-    .spinner {
-      width: 60px;
-      height: 60px;
-      border: 6px solid #ccc;
-      border-top-color: #007bff;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
+    #loadingOverlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5); /* dark transparent backdrop */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999; /* stay on top */
+        display: none; /* hidden by default */
     }
 
     @@keyframes spin {

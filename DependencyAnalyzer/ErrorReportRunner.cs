@@ -1,9 +1,11 @@
 ﻿using DependencyAnalyzer.Parsers;
+using DependencyAnalyzer.Visualizers;
 using Microsoft.CodeAnalysis;
 using System.Text;
 
 namespace DependencyAnalyzer
 {
+    //TODO combine these somehow to take make only one public method
     public class ErrorReportRunner(
         DependencyGraph dependencyGraph,
         ManualResolutionParser manualResolutionParser)
@@ -13,49 +15,6 @@ namespace DependencyAnalyzer
             public string Project;
             public string DependantClass;
             public string ErrorMessage;
-        }
-
-        public string FindLifetimeMismatches()
-        {
-            var issues = new List<DependencyMismatch>();
-            foreach (var node in dependencyGraph.Nodes)
-            {
-                foreach (var (project, registration) in node.RegistrationInfo)
-                {
-                    foreach (var dependantReference in node.DependedOnBy)
-                    {
-                        if (!dependantReference.RegistrationInfo.TryGetValue(project, out var dependantRegistration)) continue;
-
-                        if (dependantRegistration.Lifetime > registration.Lifetime)
-                        {
-                            var errorMessage = ($"\t[{dependantRegistration.Lifetime}] {dependantReference.ClassName} -> [{registration.Lifetime}] {node.ClassName}\n");
-                            errorMessage += ($"\t\tClass: {dependantReference.ClassName} has lifetime of {dependantRegistration.Lifetime}\n");
-                            errorMessage += ($"\t\tbut references shorter lived class: {node.ClassName} with lifetime {registration.Lifetime}");
-                            issues.Add(new DependencyMismatch()
-                            {
-                                Project = project,
-                                DependantClass = dependantReference.ClassName,
-                                ErrorMessage = errorMessage
-                            });
-                        }
-                    }
-                }
-            }
-
-            var sb = new StringBuilder();
-            var projectIssueGroups = issues.OrderBy(x => x.DependantClass).GroupBy(x => x.Project);
-
-            foreach(var projectIssues in projectIssueGroups)
-            {
-                var project = projectIssues.Key;
-                sb.AppendLine($"Issues found in project {project}");
-                foreach(var issue in projectIssues)
-                {
-                    sb.AppendLine(issue.ErrorMessage);
-                }
-            }
-
-            return sb.ToString();
         }
 
         public ColoredStringBuilder GenerateCycleReport(string className, string project, bool entireProject, bool allControllers)
@@ -81,8 +40,14 @@ namespace DependencyAnalyzer
             else
             {
                 sb.AppendLine($"Cycles for dependency in project {project}:", ConsoleColor.Cyan);
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                }
                 
-                foreach (var node in dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
+                foreach (var node in relevantNodes)
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
                     SearchForCycle(node, project, currentPath, visited, sb);
@@ -149,7 +114,14 @@ namespace DependencyAnalyzer
             else
             {
                 sb.AppendLine($"Nodes with excessive dependencies in project {project}:", ConsoleColor.Cyan);
-                foreach (var node in dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                }
+
+                foreach (var node in relevantNodes)
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
                     SearchForExcessiveDependencies(node, project, currentPath, visited, sb);
@@ -216,7 +188,14 @@ namespace DependencyAnalyzer
             else
             {
                 sb.AppendLine($"Manually resolved dependencies in project {project}:", ConsoleColor.Cyan);
-                foreach (var node in dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project)))
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                }
+
+                foreach (var node in relevantNodes)
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
                     SearchForManualLifecycle(node, project, currentPath, visited, sb);
@@ -265,22 +244,161 @@ namespace DependencyAnalyzer
             }
         }
 
+        private void TODO(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
+        {
+          //TODO stop referencing this
+        }
+
         public ColoredStringBuilder GenerateUnusedMethodsReport(string className, string project, bool entireProject, bool allControllers)
         {
             var sb = new ColoredStringBuilder();
+            var visited = new List<DependencyNode>();
 
-            //TODO implement
+            if (!entireProject && !allControllers)
+            {
+                sb.AppendLine($"TODO UNUSED METHODS", ConsoleColor.Cyan);
+
+                var currentPath = new Stack<INamedTypeSymbol>();
+                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
+                if (classNode == null)
+                {
+                    sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
+                }
+                else
+                {
+                    TODO(classNode, project, currentPath, visited, sb);
+                }
+            }
+            else
+            {
+                sb.AppendLine($"TODO UNUSED METHODS", ConsoleColor.Cyan);
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                }
+
+                foreach (var node in relevantNodes)
+                {
+                    var currentPath = new Stack<INamedTypeSymbol>();
+                    TODO(node, project, currentPath, visited, sb);
+                }
+            }
 
             return sb;
         }
 
-        public ColoredStringBuilder GenerateNewInsteadOfInjectedReport(string className, string project, bool entireProject, bool allControllers)
+        public ColoredStringBuilder GenerateManualInstantiationReport(string className, string project, bool entireProject, bool allControllers)
         {
             var sb = new ColoredStringBuilder();
+            var visited = new List<DependencyNode>();
 
-            //TODO implement
+            if (!entireProject && !allControllers)
+            {
+                sb.AppendLine($"TODO MANUAL INSTANTIATION", ConsoleColor.Cyan);
+
+                var currentPath = new Stack<INamedTypeSymbol>();
+                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
+                if (classNode == null)
+                {
+                    sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
+                }
+                else
+                {
+                    TODO(classNode, project, currentPath, visited, sb);
+                }
+            }
+            else
+            {
+                sb.AppendLine($"TODO MANUAL INSTANTIATION", ConsoleColor.Cyan);
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                }
+
+                foreach (var node in relevantNodes)
+                {
+                    var currentPath = new Stack<INamedTypeSymbol>();
+                    TODO(node, project, currentPath, visited, sb);
+                }
+            }
 
             return sb;
+        }
+
+       
+        public ColoredStringBuilder GenerateTreeReport(string className, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+            var visited = new List<DependencyNode>();
+
+            if (!entireProject && !allControllers)
+            {
+                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
+                if (classNode == null)
+                {
+                    sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
+                }
+                else
+                {
+                    //todo remove node printer
+                    sb.AppendLine($"Dependency Tree from node {className}", ConsoleColor.Cyan);
+                    sb.Append(NodePrinter.PrintDependencyTreeForProject(classNode, project));
+                    sb.AppendLine($"Consumer Tree from nose {className}", ConsoleColor.Cyan);
+                    sb.Append(NodePrinter.PrintConsumerTreeForProject(classNode, project));
+                }
+            }
+            else
+            {
+                sb.AppendLine($"Lifetime Violations for Graph", ConsoleColor.Cyan);
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                }
+
+                SearchForLifetimeViolations(relevantNodes, sb);
+            }
+
+            return sb;
+        }
+
+        public void SearchForLifetimeViolations(IEnumerable<DependencyNode> searchNodes, ColoredStringBuilder sb)
+        {
+            var issues = new List<DependencyMismatch>();
+            foreach (var node in searchNodes)
+            {
+                foreach (var (project, registration) in node.RegistrationInfo)
+                {
+                    foreach (var dependantReference in node.DependedOnBy)
+                    {
+                        if (!dependantReference.RegistrationInfo.TryGetValue(project, out var dependantRegistration)) continue;
+
+                        if (dependantRegistration.Lifetime > registration.Lifetime)
+                        {
+                            sb.AppendLine($"[{dependantRegistration.Lifetime}] {dependantReference.ClassName} -> [{registration.Lifetime}] {node.ClassName}\n", ConsoleColor.Red);
+                            sb.AppendLine($"\tClass: {dependantReference.ClassName} has lifetime of {dependantRegistration.Lifetime}\n", ConsoleColor.Gray);
+                            sb.AppendLine($"\tbut references shorter lived class: {node.ClassName} with lifetime {registration.Lifetime}", ConsoleColor.Gray);
+                        }
+                    }
+                }
+            }
+
+            var projectIssueGroups = issues.OrderBy(x => x.DependantClass).GroupBy(x => x.Project);
+
+            foreach (var projectIssues in projectIssueGroups)
+            {
+                var project = projectIssues.Key;
+                sb.AppendLine($"Issues found in project {project}", ConsoleColor.Red);
+                foreach (var issue in projectIssues)
+                {
+                    sb.AppendLine($"\t{issue.ErrorMessage}", ConsoleColor.Gray);
+                }
+            }
         }
     }
 }

@@ -1,25 +1,12 @@
 ﻿async function loadSingleNode() {
     allControllers = false;
     entireProject = false;
-    enableNodeSpecificTextOptions()
     const className = document.getElementById("classInput").value;
     if (!className) return window.alert("No class selected");
 
     loadTextReports();
     loadSingleClassSvg();
 } 
-
-function disableNodeSpecificTextOptions() {
-    document.getElementById("check-dependency-tree").checked = false;
-    document.getElementById("check-dependency-tree").disabled = true;
-    document.getElementById("check-consumer-tree").checked = false;
-    document.getElementById("check-consumer-tree").disabled = true;
-}
-
-function enableNodeSpecificTextOptions() {
-    document.getElementById("check-dependency-tree").disabled = false;
-    document.getElementById("check-consumer-tree").disabled = false;
-}
 
 document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("classInput");
@@ -89,8 +76,7 @@ var entireProject = false;
 async function loadEntireProject() {
     allControllers = false;
     entireProject = true;
-    showSpinner();
-    disableNodeSpecificTextOptions();
+    showLoading();
     loadTextReports(true, false);
     const project = document.getElementById('projectInput').value;
 
@@ -102,7 +88,7 @@ async function loadEntireProject() {
     } else {
         document.getElementById('svgOutput').innerText = 'Failed to load SVG.';
     }
-    hideSpinner();
+    hideLoading();
     configureSVG();
 }
 
@@ -110,8 +96,7 @@ var allControllers = false;
 async function loadAllControllers() {
     allControllers = true;
     entireProject = false;
-    showSpinner();
-    disableNodeSpecificTextOptions();
+    showLoading();
     loadTextReports(false, true);
     const project = document.getElementById('projectInput').value;
 
@@ -123,28 +108,20 @@ async function loadAllControllers() {
     } else {
         document.getElementById('svgOutput').innerText = 'Failed to load SVG.';
     }
-    hideSpinner();
+    hideLoading();
     configureSVG();
 }
 
 async function loadTextReports() {
-    fetchDependencyTree(); //these are special
-    fetchConsumerTree(); //these are special
-    fetchTextReport("Cycles", "check-cycles", "output-cycles");
-    fetchTextReport("ExcessiveDependencies", "check-excessive-deps", "output-excessive-deps");
-    fetchTextReport("ManualLifecycleManagement", "check-manual-lifestyle", "output-manual-lifestyle");
-    fetchTextReport("UnusedMethods", "check-unused-methods", "output-unused-methods");
-    fetchTextReport("NewInsteadOfInjected", "check-new-instead-of-injected", "output-new-instead-of-injected");
+    fetchTextReport("Tree", "output-lifetime-violations");
+    fetchTextReport("Cycles", "output-cycles");
+    fetchTextReport("ExcessiveDependencies", "output-excessive-deps");
+    fetchTextReport("ManualLifecycleManagement", "output-manual-lifestyle");
+    fetchTextReport("UnusedMethods", "output-unused-methods");
+    fetchTextReport("ManualInstantiation", "output-manual-instantiation");
 };
 
-async function fetchTextReport(endpoint, checkId, outputId){
-    if (!document.getElementById(checkId).checked) {
-        document.getElementById(outputId).innerText = '';
-        document.getElementById(outputId).display = 'none';
-        return;
-    }
-    document.getElementById(outputId).style.display = 'block';
-
+async function fetchTextReport(endpoint, outputId){
     const className = document.getElementById("classInput").value;
     const project = document.getElementById("projectInput").value;
 
@@ -162,53 +139,8 @@ async function fetchTextReport(endpoint, checkId, outputId){
     document.getElementById(outputId).innerHTML = html;
 }
 
-async function fetchDependencyTree() {
-    if (!document.getElementById('check-dependency-tree').checked) {
-        document.getElementById('output-dependency-tree').innerText = '';
-        document.getElementById('output-dependency-tree').diplay = 'none';
-        return;
-    }
-    document.getElementById('output-dependency-tree').style.display = 'block';
-
-    const className = document.getElementById("classInput").value;
-    const project = document.getElementById("projectInput").value;
-
-    const response = await fetch(`/api/TextReport/GetDependencyTreeText?className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}`);
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        document.getElementById("output-dependency-tree").textContent = "Error: " + errorText;
-        return;
-    }
-    const html = await response.text();
-    document.getElementById("output-dependency-tree").innerHTML = html;
-}
-
-async function fetchConsumerTree() {
-    if (!document.getElementById('check-consumer-tree').checked) {
-        document.getElementById('output-consumer-tree').innerText = '';
-        document.getElementById('output-consumer-tree').display = 'none';
-        return;
-    }
-
-    document.getElementById('output-consumer-tree').style.display = 'block';
-
-    const className = document.getElementById("classInput").value;
-    const project = document.getElementById("projectInput").value;
-
-    const response = await fetch(`/api/TextReport/GetConsumerTreeText?className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}`);
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        document.getElementById("output-consumer-tree").textContent = "Error: " + errorText;
-        return;
-    }
-    const html = await response.text();
-    document.getElementById("output-consumer-tree").innerHTML = html;
-}
-
 async function loadSingleClassSvg() {
-    showSpinner();
+    showLoading();
     const className = document.getElementById('classInput').value;
     const project = document.getElementById('projectInput').value;
 
@@ -220,7 +152,7 @@ async function loadSingleClassSvg() {
     } else {
         document.getElementById('svgOutput').innerText = 'Failed to load SVG.';
     }
-    hideSpinner();
+    hideLoading();
 
     configureSVG(className);
 }
@@ -314,10 +246,10 @@ function attachClickHandlers() {
     });
 }
 
-function showSpinner() {
-    document.getElementById("loadingSpinner").style.display = "flex";
+function showLoading() {
+    document.getElementById("loadingOverlay").style.display = "flex";
 }
 
-function hideSpinner() {
-    document.getElementById("loadingSpinner").style.display = "none";
+function hideLoading() {
+    document.getElementById("loadingOverlay").style.display = "none";
 }

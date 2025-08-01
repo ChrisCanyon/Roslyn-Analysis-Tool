@@ -136,13 +136,37 @@ namespace DependencyAnalyzer.Parsers
 
                     foreach (var (methodName, containerType) in resolveTargets)
                     {
-                        var invocations = FindInvocations(root, model, methodName, containerType);
+                        var invocations = FindInvocations(root, model, methodName, containerType).
+                            Where(x => IsIgnoredClassType(x, model));
+
                         ret.AddRange(GetResolutionInfoFromInvocations(invocations, model, project.Name, doc.Name));
                     }
                 }
             }
 
             return ret;
+        }
+
+        private static bool IsIgnoredClassType(InvocationExpressionSyntax invocation, SemanticModel model)
+        {
+            var classDeclaration = invocation.Ancestors()
+                .OfType<ClassDeclarationSyntax>()
+                .FirstOrDefault();
+
+            if (classDeclaration != null)
+            {
+                var classSymbol = model.GetDeclaredSymbol(classDeclaration) as INamedTypeSymbol;
+                var ignoredNameFragments = new []
+                {
+                    "Build",
+                    "Factory",
+                    "Resolver"
+                };
+
+                return ignoredNameFragments.Any(frag => classSymbol.Name.Contains(frag, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return false;
         }
 
         private static List<ManualLifetimeInteractionInfo> GetResolutionInfoFromInvocations(IEnumerable<InvocationExpressionSyntax> invocations, SemanticModel model, string project, string file)

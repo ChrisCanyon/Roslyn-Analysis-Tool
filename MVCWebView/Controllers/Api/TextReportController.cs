@@ -44,13 +44,14 @@ namespace MVCWebView.Controllers.Api
             }
 
 
-            ColoredStringBuilder result = type switch
+            ColoredStringBuilder? result = type switch
             {
+                "Tree" => _runner.GenerateTreeReport(className, project, entireProject, allControllers),
                 "Cycles" => _runner.GenerateCycleReport(className, project, entireProject, allControllers),
                 "ExcessiveDependencies" => _runner.GenerateExcessiveDependencies(className, project, entireProject, allControllers),
                 "ManualLifecycleManagement" => _runner.GenerateManualLifecycleManagementReport(className, project, entireProject, allControllers),
                 "UnusedMethods" => _runner.GenerateUnusedMethodsReport(className, project, entireProject, allControllers),
-                "NewInsteadOfInjected" => _runner.GenerateNewInsteadOfInjectedReport(className, project, entireProject, allControllers),
+                "ManualInstantiation" => _runner.GenerateManualInstantiationReport(className, project, entireProject, allControllers),
                 _ => null
             };
 
@@ -58,44 +59,6 @@ namespace MVCWebView.Controllers.Api
                 return BadRequest($"Unknown report type: {type}");
 
             return Content(result.ToHTMLString(), "text/plain");
-        }
-
-        [HttpGet(nameof(GetDependencyTreeText))]
-        public IActionResult GetDependencyTreeText(string className, string project)
-        {
-            var node = _graph.Nodes.Where(x =>
-                        string.Compare(x.ClassName, className, true) == 0).FirstOrDefault();
-            if (node == null)
-            {
-                return NotFound($"Class with name {className} not found");
-            }
-            if (!node.RegistrationInfo.TryGetValue(project, out var projectReg))
-            {
-                return NotFound($"{className} not registered in {project}");
-            }
-
-            var dependency = NodePrinter.PrintDependencyTreeForProject(node, projectReg.ProjectName);
-
-            return Content(dependency.ToHTMLString(), "text/html");
-        }
-
-        [HttpGet(nameof(GetConsumerTreeText))]
-        public IActionResult GetConsumerTreeText(string className, string project)
-        {
-            var node = _graph.Nodes.Where(x =>
-                        string.Compare(x.ClassName, className, true) == 0).FirstOrDefault();
-            if (node == null)
-            {
-                return NotFound($"Class with name {className} not found");
-            }
-            if (!node.RegistrationInfo.TryGetValue(project, out var projectReg))
-            {
-                return NotFound($"{className} not registered in {project}");
-            }
-
-            var consumer = NodePrinter.PrintConsumerTreeForProject(node, projectReg.ProjectName);
-
-            return Content(consumer.ToHTMLString(), "text/html");
         }
     }
 }
