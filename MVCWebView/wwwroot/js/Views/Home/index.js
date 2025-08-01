@@ -247,7 +247,12 @@ function attachClickHandlers() {
 }
 
 function showLoading() {
-    document.getElementById("loadingOverlay").style.display = "flex";
+    const overlay = document.getElementById("loadingOverlay");
+    const img = overlay.querySelector("img");
+    overlay.style.display = "flex";
+    img.classList.remove("grow"); // reset
+    void img.offsetWidth; // force reflow to restart animation
+    img.classList.add("grow");
 }
 
 function hideLoading() {

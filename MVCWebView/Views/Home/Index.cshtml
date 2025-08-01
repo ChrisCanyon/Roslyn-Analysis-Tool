@@ -93,6 +93,19 @@
 </div>
 
 <style>
+    @@keyframes grow {
+      from {
+        transform: scale(1);
+      }
+      to {
+        transform: scale(3);
+      }
+    }
+
+    #loadingOverlay img.grow {
+        animation: grow 9s ease-out forwards;
+    }
+
     button.btn.btn-sm.btn-secondary {
         width: 100%;
         text-align: left;
