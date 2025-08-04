@@ -2,6 +2,7 @@
 using DependencyAnalyzer.Visualizers;
 using Microsoft.CodeAnalysis;
 using System.Text;
+using System.Xml.Linq;
 
 namespace DependencyAnalyzer
 {
@@ -167,27 +168,28 @@ namespace DependencyAnalyzer
 
         public ColoredStringBuilder GenerateManualLifecycleManagementReport(string className, string project, bool entireProject, bool allControllers)
         {
-            var sb = new ColoredStringBuilder();
+            var resolveNotes = new ColoredStringBuilder();
+            var disposeNotes = new ColoredStringBuilder();
             var visited = new List<DependencyNode>();
 
             if (!entireProject && !allControllers)
             {
-                sb.AppendLine($"Manually resolved dependencies in {className} dependency tree in project {project}:", ConsoleColor.Cyan);
+                resolveNotes.AppendLine($"Manually resolved dependencies in {className} dependency tree in project {project}:", ConsoleColor.Cyan);
+                disposeNotes.AppendLine($"Manually disposed/released dependencies in {className} dependency tree in project {project}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
                 var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
                 if (classNode == null)
                 {
-                    sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
+                    return resolveNotes.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
                 }
-                else
-                {
-                    SearchForManualLifecycle(classNode, project, currentPath, visited, sb);
-                }
+                SearchForManualLifecycle(classNode, project, currentPath, visited, resolveNotes, disposeNotes);
             }
             else
             {
-                sb.AppendLine($"Manually resolved dependencies in project {project}:", ConsoleColor.Cyan);
+                resolveNotes.AppendLine($"Manually resolved dependencies in project {project}:", ConsoleColor.Cyan);
+                disposeNotes.AppendLine($"Manually disposed/released dependencies in project {project}:", ConsoleColor.Cyan);
+
                 var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
 
                 if (allControllers)
@@ -198,14 +200,14 @@ namespace DependencyAnalyzer
                 foreach (var node in relevantNodes)
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
-                    SearchForManualLifecycle(node, project, currentPath, visited, sb);
+                    SearchForManualLifecycle(node, project, currentPath, visited, resolveNotes, disposeNotes);
                 }
             }
 
-            return sb;
+            return resolveNotes.Append(disposeNotes);
         }
 
-        public void SearchForManualLifecycle(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
+        private void SearchForManualLifecycle(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder resolveNotes, ColoredStringBuilder disposeNotes)
         {
             var comparer = new FullyQualifiedNameComparer();
             if (path.Contains(node.Class, comparer)) return;
@@ -220,28 +222,77 @@ namespace DependencyAnalyzer
             foreach(var resolvedSymbol in allResolvedSymbols.Where(x => x.Project == project && 
                                             comparer.Equals(node.Class, x.Type)))
             {
-                sb.AppendLine($"{node.ClassName} manual resolutions", ConsoleColor.Yellow);
-                sb.AppendLine($"\tIn {resolvedSymbol.File} {node.ClassName}", ConsoleColor.White);
-                sb.AppendLine($"\t{resolvedSymbol.CodeSnippet}", ConsoleColor.Gray);
+                resolveNotes.AppendLine($"{node.ClassName} manual resolutions", ConsoleColor.Yellow);
+                resolveNotes.AppendLine($"\tIn {node.ClassName}", ConsoleColor.White);
+                resolveNotes.AppendLine($"\t{resolvedSymbol.CodeSnippet}", ConsoleColor.Gray);
             }
 
             List<ManualLifetimeInteractionInfo> allDisposedSymbols = manualResolutionParser.ManuallyDisposedSymbols;
-            foreach (var disposedSymbol in allDisposedSymbols.Where(x => x.Project == project &&
-                                                        comparer.Equals(node.Class, x.Type)))
+            foreach (var disposedSymbol in allDisposedSymbols.Where(x => comparer.Equals(node.Class, x.Type) && project == x.Project))
             {
-                if(nodeRegistration.Lifetime > LifetimeTypes.Transient)
+                
+                disposeNotes.AppendLine($"[{nodeRegistration.Lifetime}]{node.ClassName} manual Disposal/Release:", ConsoleColor.Yellow);
+                disposeNotes.AppendLine($"\tIn {node.ClassName}", ConsoleColor.White);
+                disposeNotes.AppendLine($"\t{disposedSymbol.CodeSnippet}", ConsoleColor.Gray);
+                if (nodeRegistration.Lifetime < LifetimeTypes.Singleton)
                 {
-                    sb.AppendLine($"~~WARN {nodeRegistration.Lifetime} Potential Early Disposal~~", ConsoleColor.Red);
+                    //Most releases are called on interface but interfaces dont have dependencies. We have to find the implementations for this project
+                    if(node.IsInterface)
+                    {
+                        var implementations = node.ImplementedBy.Where(x => x.RegistrationInfo.ContainsKey(project));
+                        foreach(var implmentation in implementations)
+                        {
+                            if (FindSensitiveNodesInDependencyTree(implmentation, project, new Stack<INamedTypeSymbol>(), new List<DependencyNode>(), disposeNotes))
+                            {
+                                disposeNotes.AppendLine($"\t{disposedSymbol.InvocationPath}", ConsoleColor.Red);
+                            };
+                        }
+                    }
+                    else
+                    {
+                        if (FindSensitiveNodesInDependencyTree(node, project, new Stack<INamedTypeSymbol>(), new List<DependencyNode>(), disposeNotes))
+                        {
+                            disposeNotes.AppendLine($"\t{disposedSymbol.InvocationPath}", ConsoleColor.Red);
+                        };
+                    }
                 }
-                sb.AppendLine($"{node.ClassName} manual Disposal/Release:", ConsoleColor.Yellow);
-                sb.AppendLine($"\tIn {disposedSymbol.File} {node.ClassName}", ConsoleColor.White);
-                sb.AppendLine($"\t{disposedSymbol.CodeSnippet}", ConsoleColor.Gray);
             }
 
             foreach (var dependency in node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project)))
             {
-                SearchForManualLifecycle(node, project, path, visitedNodes, sb);
+                SearchForManualLifecycle(node, project, path, visitedNodes, resolveNotes, disposeNotes);
             }
+
+            path.Pop();
+        }
+
+        private bool FindSensitiveNodesInDependencyTree(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
+        {
+            var comparer = new FullyQualifiedNameComparer();
+            if (path.Contains(node.Class, comparer)) return false;
+            if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return false;
+            if (node.RegistrationInfo[project].Lifetime == LifetimeTypes.Singleton) return false; //doesnt actually release
+            
+            visitedNodes.Add(node);
+            path.Push(node.Class);
+
+            bool ret = false;
+
+            var regi = node.RegistrationInfo[project];
+
+            if (regi.Lifetime == LifetimeTypes.PerWebRequest)
+            {
+                sb.AppendLine($"\t[{regi.Lifetime}]{node.ClassName} released downstream", ConsoleColor.Red);
+                ret = true;
+            }
+
+            foreach (var dependency in node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project)))
+            {
+                ret = ret || FindSensitiveNodesInDependencyTree(node, project, path, visitedNodes, sb);
+            }
+
+            path.Pop();
+            return ret;
         }
 
         private void TODO(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)

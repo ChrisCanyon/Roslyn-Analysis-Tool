@@ -1,7 +1,6 @@
 ﻿using DependencyAnalyzer.Interfaces;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Linq.Expressions;
 
 namespace DependencyAnalyzer.Parsers.Windsor
 {
@@ -105,73 +104,16 @@ namespace DependencyAnalyzer.Parsers.Windsor
             if (installer == null) return registration; //this should never happen
 
             var calledProjects = await FindInstallerReferencesAsync(solution, installer);
-            return calledProjects.SelectMany(project =>
+            return calledProjects.SelectMany(calledProject =>
                                             registration.Select(incompleteRegistration =>
                                             new RegistrationInfo
                                             {
                                                 Interface = incompleteRegistration.Interface,
                                                 Implementation = incompleteRegistration.Implementation,
                                                 Lifetime = incompleteRegistration.Lifetime,
-                                                ProjectName = project
+                                                ProjectName = calledProject
                                             }
                                         ));
-        }
-
-        private record InstallInvocationContext(
-            InvocationExpressionSyntax Invocation,
-            SemanticModel SemanticModel,
-            string ProjectName
-        );
-
-        private IEnumerable<InstallInvocationContext> _windsorInstallContexts;
-        private async Task<IEnumerable<InstallInvocationContext>> FindWindsorInstallInvocationContextsForSolution(Solution solution)
-        {
-            if (_windsorInstallContexts != null) return _windsorInstallContexts;
-            var ret = new List<InstallInvocationContext>();
-
-            foreach (var project in solution.Projects)
-            {
-                foreach (var document in project.Documents)
-                {
-                    var root = await document.GetSyntaxRootAsync();
-                    var model = await document.GetSemanticModelAsync();
-
-                    if (root is null || model is null) continue;
-
-                    IEnumerable<InvocationExpressionSyntax> installInvocations = FindInvocations(root, model, "Install", "Castle.Windsor.IWindsorContainer");
-
-                    ret.AddRange(installInvocations.Select(invocation =>
-                                    new InstallInvocationContext(invocation, model, project.Name))
-                    );
-                }
-            }
-            _windsorInstallContexts = ret;
-            return _windsorInstallContexts;
-        }
-
-        private async Task<IEnumerable<string>> FindInstallerReferencesAsync(Solution solution, INamedTypeSymbol installerSymbol)
-        {
-            var result = new HashSet<string>();
-            var comparer = new FullyQualifiedNameComparer();
-            var installContexts = await FindWindsorInstallInvocationContextsForSolution(solution);
-
-            foreach (var installContext in installContexts)
-            {
-                var model = installContext.SemanticModel;
-                var invocation = installContext.Invocation;
-                var project = installContext.ProjectName;
-
-                var argSymbols = invocation.ArgumentList.Arguments
-                    .Select(arg => model.GetTypeInfo(arg.Expression).Type)
-                    .OfType<INamedTypeSymbol>();
-
-                if (argSymbols.Any(arg => comparer.Equals(arg, installerSymbol)))
-                {
-                    result.Add(project);
-                }
-            }
-
-            return result;
         }
 
         private struct ImplementationStrategy

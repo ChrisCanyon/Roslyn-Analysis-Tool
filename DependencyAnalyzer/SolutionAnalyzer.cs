@@ -53,6 +53,9 @@ namespace DependencyAnalyzer
 
             allTypes.AddRange(await allTypesTask);
 
+            var apiTPRegi = registrationInfos.Where(x => x.ProjectName == "Api.TylerPayments").ToList();
+            var siteContextRegi = registrationInfos.Where(x => x.Implementation?.ToDisplayString() == "Core.InSite.SiteContext").ToList();
+
             return new SolutionAnalyzer(allTypes, registrationInfos);
         }
 

@@ -2,6 +2,7 @@ using DependencyAnalyzer;
 using DependencyAnalyzer.Parsers;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis.MSBuild;
+using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,11 +19,31 @@ string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\InSite.sln";
 //string solutionPath = "C:\\TylerDev\\Capital\\Source\\Capital.sln";
 
 //Generate full dependency graph for project and register as single to cache it
+var stopwatch = Stopwatch.StartNew();
 var s = await workspace.OpenSolutionAsync(solutionPath);
-ManualResolutionParser manParse = await ManualResolutionParser.Build(s);
+stopwatch.Stop(); 
+Console.WriteLine($"~~~ Workspace open ~~~");
+Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
+
+stopwatch.Restart();
 SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.Build(s);
+stopwatch.Stop();
+Console.WriteLine($"~~~ SolutionAnalyzer build ~~~");
+Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
+
+stopwatch.Restart();
+ManualResolutionParser manParse = new ManualResolutionParser(s, solutionAnalyzer);
+await manParse.Build();
+stopwatch.Stop(); 
+Console.WriteLine($"~~~ ManualResolutionParser build ~~~");
+Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
+stopwatch.Restart();
+
 DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
 DependencyGraph graph = dependencyAnalyzer.BuildFullDependencyGraph();
+stopwatch.Stop(); 
+Console.WriteLine($"~~~ graph build ~~~");
+Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
 
 builder.Services.AddSingleton(solutionAnalyzer);
 builder.Services.AddSingleton(dependencyAnalyzer);
