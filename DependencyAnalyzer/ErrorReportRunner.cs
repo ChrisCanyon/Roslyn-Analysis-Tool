@@ -223,17 +223,15 @@ namespace DependencyAnalyzer
                                             comparer.Equals(node.Class, x.Type)))
             {
                 resolveNotes.AppendLine($"{node.ClassName} manual resolutions", ConsoleColor.Yellow);
-                resolveNotes.AppendLine($"\tIn {node.ClassName}", ConsoleColor.White);
-                resolveNotes.AppendLine($"\t{resolvedSymbol.CodeSnippet}", ConsoleColor.Gray);
+                resolveNotes.AppendLine($"\t{resolvedSymbol.InvocationPath}", ConsoleColor.White);
             }
 
-            List<ManualLifetimeInteractionInfo> allDisposedSymbols = manualResolutionParser.ManuallyDisposedSymbols;
-            foreach (var disposedSymbol in allDisposedSymbols.Where(x => comparer.Equals(node.Class, x.Type) && project == x.Project))
+            var disposals = manualResolutionParser.ManuallyDisposedSymbols
+                .Where(x => comparer.Equals(node.Class, x.Type) && project == x.Project).ToList();
+            foreach (var disposedSymbol in disposals)
             {
-                
                 disposeNotes.AppendLine($"[{nodeRegistration.Lifetime}]{node.ClassName} manual Disposal/Release:", ConsoleColor.Yellow);
-                disposeNotes.AppendLine($"\tIn {node.ClassName}", ConsoleColor.White);
-                disposeNotes.AppendLine($"\t{disposedSymbol.CodeSnippet}", ConsoleColor.Gray);
+                disposeNotes.AppendLine($"\t{disposedSymbol.CodeSnippet}", ConsoleColor.Yellow);
                 if (nodeRegistration.Lifetime < LifetimeTypes.Singleton)
                 {
                     //Most releases are called on interface but interfaces dont have dependencies. We have to find the implementations for this project

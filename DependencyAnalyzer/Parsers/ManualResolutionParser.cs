@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography.Xml;
 
 namespace DependencyAnalyzer.Parsers
 {
@@ -52,8 +53,8 @@ namespace DependencyAnalyzer.Parsers
 
             var resolveTargets = new[]
             {
-      //          ("Dispose", "System.IDisposable"),
-      //          ("DisposeAsync", "System.IAsyncDisposable"),
+            //    ("Dispose", "System.IDisposable"),
+            //    ("DisposeAsync", "System.IAsyncDisposable"),
                 ("Release", "Castle.Windsor.IWindsorContainer"),
             };
             var comparer = new FullyQualifiedNameComparer();
@@ -64,76 +65,78 @@ namespace DependencyAnalyzer.Parsers
                 if (targetMethod == null) continue;
 
                 var disposeReferences = await SymbolFinder.FindReferencesAsync(targetMethod, solution);
-               
-                foreach (var reference in disposeReferences)
+                var disposeReferenceLocations = disposeReferences
+                    .SelectMany(r => r.Locations)
+                    .Select(l => l.Location)
+                    .Where(l => l.IsInSource)
+                    .DistinctBy(l => (l.SourceTree?.FilePath, l.SourceSpan.Start));
+
+                foreach (var location in disposeReferenceLocations)
                 {
-                    foreach (var location in reference.Locations)
-                    {
-                        var sourceTree = location.Location.SourceTree;
-                        var span = location.Location.SourceSpan;
-                        var root = await sourceTree.GetRootAsync();
+                    var sourceTree = location.SourceTree;
+                    var span = location.SourceSpan;
+                    var root = await sourceTree.GetRootAsync();
 
-                        var node = root.FindNode(span);
+                    var node = root.FindNode(span);
 
-                        var disposeInvocation = node.FirstAncestorOrSelf<InvocationExpressionSyntax>();
+                    var disposeInvocation = node.FirstAncestorOrSelf<InvocationExpressionSyntax>();
 
-                        if (disposeInvocation == null) continue;
+                    if (disposeInvocation == null) continue;
 
-                        var document = solution.GetDocument(sourceTree);
-                        if (document == null) continue;
+                    var document = solution.GetDocument(sourceTree);
+                    if (document == null) continue;
 
-                        var model = await document.GetSemanticModelAsync();
-                        if (model == null) continue;
+                    var model = await document.GetSemanticModelAsync();
+                    if (model == null) continue;
 
-                        var disposedClass = GetDisposedClass(disposeInvocation, model);
-                        if (disposedClass == null || !solutionAnalyzer.AllTypes.Any(x => comparer.Equals(x, disposedClass))) continue;
+                    var disposedClass = GetDisposedClass(disposeInvocation, model);
+                    if (disposedClass == null || !solutionAnalyzer.AllTypes.Any(x => comparer.Equals(x, disposedClass))) continue;
 
-                        if (IsIgnoredClassType(disposeInvocation, model)) continue;
+                    if (IsIgnoredClassType(disposeInvocation, model)) continue;
 
-                        var disposeCallContainingMethodDecl = disposeInvocation.Ancestors()
-                            .OfType<MethodDeclarationSyntax>()
-                            .FirstOrDefault();
-                        if (disposeCallContainingMethodDecl == null) continue;
-
-                        var disposeCallContainingMethod = model.GetDeclaredSymbol(disposeCallContainingMethodDecl) as IMethodSymbol;
-                        if (disposeCallContainingMethod == null) continue;
-
-                        var disposeCallContainingClassDecl = disposeInvocation.Ancestors()
-                        .OfType<ClassDeclarationSyntax>()
+                    var disposeCallContainingMethodDecl = disposeInvocation.Ancestors()
+                        .OfType<MethodDeclarationSyntax>()
                         .FirstOrDefault();
-                        if (disposeCallContainingClassDecl == null) continue;
+                    if (disposeCallContainingMethodDecl == null) continue;
 
-                        var disposeCallContainingClass = model.GetDeclaredSymbol(disposeCallContainingClassDecl) as INamedTypeSymbol;
-                        if (disposeCallContainingClass == null) continue;
+                    var disposeCallContainingMethod = model.GetDeclaredSymbol(disposeCallContainingMethodDecl) as IMethodSymbol;
+                    if (disposeCallContainingMethod == null) continue;
 
-                        //Sometimes top level is root
-                        //ie factory method lambda
-                        if (IsRootMethodInovcation(disposeCallContainingClass))
+                    var disposeCallContainingClassDecl = disposeInvocation.Ancestors()
+                    .OfType<ClassDeclarationSyntax>()
+                    .FirstOrDefault();
+                    if (disposeCallContainingClassDecl == null) continue;
+
+                    var disposeCallContainingClass = model.GetDeclaredSymbol(disposeCallContainingClassDecl) as INamedTypeSymbol;
+                    if (disposeCallContainingClass == null) continue;
+
+                    //Sometimes top level is root
+                    //ie factory method lambda
+                    if (IsRootMethodInovcation(disposeCallContainingClass))
+                    {
+                        string callPath = $"{disposeCallContainingMethod.ToDisplayString()} -> " + disposeInvocation.ToFullString();
+                        var invocationRoot = new InvocationChainFromRoot(
+                            disposeCallContainingClass,
+                            disposeCallContainingMethod,
+                            disposeInvocation,
+                            document.Project.Name,
+                            callPath
+                            );
+
+                        ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, [invocationRoot], solution));
+                    }
+                    else
+                    {
+                        var visited = new List<IMethodSymbol>();
+                        var currentPath = new Stack<string>();
+                        var rootInvocations = await WalkInvocationChain(disposeCallContainingMethod, solution, currentPath, visited);
+
+                        if (rootInvocations.Count() == 0)
                         {
-                            string callPath = $"{disposeCallContainingMethod.ToDisplayString()} -> " + disposeInvocation.ToFullString();
-                            var invocationRoot = new InvocationChainFromRoot(
-                                disposeCallContainingClass,
-                                disposeCallContainingMethod,
-                                disposeInvocation,
-                                document.Project.Name,
-                                callPath
-                                );
-
-                            ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, [invocationRoot], solution));
+                            Console.WriteLine($"Unable to determine root invocation of {disposeCallContainingMethod.ToDisplayString()}:{disposeInvocation.ToFullString()}", ConsoleColor.Cyan);
                         }
-                        else
-                        {
-                            var visited = new List<IMethodSymbol>();
-                            var currentPath = new Stack<string>();
-                            var rootInvocations = await WalkInvocationChain(disposeCallContainingMethod, solution, currentPath, visited);
 
-                            if (rootInvocations.Count() == 0)
-                            {
-                                Console.WriteLine($"Unable to determine root invocation of {disposeCallContainingMethod.ToDisplayString()}:{disposeInvocation.ToFullString()}", ConsoleColor.Cyan);
-                            }
-
-                            ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, rootInvocations, solution));
-                        }
+                        ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, rootInvocations, solution));
                     }
                 }
             }
