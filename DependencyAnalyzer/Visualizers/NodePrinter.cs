@@ -17,7 +17,7 @@ namespace DependencyAnalyzer.Visualizers
 
         private static void TraverseDependencyGraph(DependencyNode node,
             string project,
-            LifetimeTypes rootLifetime,
+            LifetimeTypes parentLifetime,
             string prefix,
             bool isLast,
             Stack<INamedTypeSymbol> path,
@@ -27,7 +27,7 @@ namespace DependencyAnalyzer.Visualizers
             string marker = prefix == "" ? "" : isLast ? "└─ " : "├─ ";
             var cycle = path.Contains(node.Class, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
 
-            if (!node.RegistrationInfo.TryGetValue(project, out var projectRegistration))
+            if (!node.RegistrationInfo.TryGetValue(project, out var currentNodeRegistration))
             {
                 // This dependency was not registered for this project.
                 // In most cases, this is likely a runtime resolution failure.
@@ -42,12 +42,12 @@ namespace DependencyAnalyzer.Visualizers
             }
 
             ConsoleColor consoleColor = ConsoleColor.Green;
-            if (projectRegistration.Lifetime < rootLifetime)
+            if (currentNodeRegistration.Lifetime < parentLifetime)
             {
                 consoleColor = ConsoleColor.Red;
             }
 
-            ambiguousRegistrationSubDependency = ambiguousRegistrationSubDependency || projectRegistration.UnresolvableImplementation;
+            ambiguousRegistrationSubDependency = ambiguousRegistrationSubDependency || currentNodeRegistration.UnresolvableImplementation;
 
             // If this is a sub-dependency of a registration with an unresolvable implementation,
             // we can't be certain this dependency is actually used in the project.
@@ -57,11 +57,11 @@ namespace DependencyAnalyzer.Visualizers
                 consoleColor = ConsoleColor.Yellow;
             } 
 
-            var implementationNote = projectRegistration.UnresolvableImplementation ? " [Ambiguous]" : "";
-            var factoryNote = projectRegistration.IsFactoryResolved ? " [Factory Resolved]" : "";
+            var implementationNote = currentNodeRegistration.UnresolvableImplementation ? " [Ambiguous]" : "";
+            var factoryNote = currentNodeRegistration.IsFactoryResolved ? " [Factory Resolved]" : "";
             sb.Append($"{prefix}{marker}{node.ClassName}{cycle}{factoryNote}{implementationNote}", consoleColor);
-            var lifestyleText = $" [{projectRegistration.Lifetime}]";
-            sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.Lifetime));
+            var lifestyleText = $" [{currentNodeRegistration.Lifetime}]";
+            sb.AppendLine(lifestyleText, GetColorForLifetime(currentNodeRegistration.Lifetime));
 
             if (!string.IsNullOrEmpty(cycle))
                 return;
@@ -74,7 +74,7 @@ namespace DependencyAnalyzer.Visualizers
             {
                 var isLastChild = i == deps.Count - 1;
                 var childPrefix = prefix + (isLast ? "   " : "│  ");
-                TraverseDependencyGraph(deps[i], project, rootLifetime, childPrefix, isLastChild, path, sb);
+                TraverseDependencyGraph(deps[i], project, currentNodeRegistration.Lifetime, childPrefix, isLastChild, path, sb);
             }
 
             path.Pop();

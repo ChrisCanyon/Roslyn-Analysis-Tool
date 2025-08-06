@@ -129,17 +129,16 @@ namespace DependencyAnalyzer.Visualizers
             sb.AppendLine("\t rankdir=RL;");
             CreateGraphvizLegend(sb);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             var visited = new List<DependencyNode>();
-            TraverseConsumerGraph(startNode, project, rootLifetime, currentPath, visited, sb);
+            TraverseConsumerGraph(startNode, project, currentPath, visited, sb);
 
             sb.AppendLine("}");
             return sb.ToString();
         }
 
-        private static void TraverseConsumerGraph(DependencyNode node, string project, LifetimeTypes rootLifetime, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb)
+        private static void TraverseConsumerGraph(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb)
         {
-            if (!node.RegistrationInfo.TryGetValue(project, out var registration)) return;
+            if (!node.RegistrationInfo.TryGetValue(project, out var currentNodeLifetime)) return;
             if (path.Contains(node.Class, new FullyQualifiedNameComparer()))
             {
                 Console.WriteLine($"Cycle detected:\n\t" +
@@ -151,18 +150,18 @@ namespace DependencyAnalyzer.Visualizers
             visitedNodes.Add(node);
             path.Push(node.Class);
 
-            CreateNode(sb, node.ClassName, registration.Lifetime);
+            CreateNode(sb, node.ClassName, currentNodeLifetime.Lifetime);
 
             foreach (var dependant in node.DependedOnBy)
             {
-                TraverseConsumerGraph(dependant, project, rootLifetime, path, visitedNodes, sb);
+                TraverseConsumerGraph(dependant, project, path, visitedNodes, sb);
             }
 
             foreach (var dependant in node.DependedOnBy)
             {
                 if (!dependant.RegistrationInfo.TryGetValue(project, out var dependantReg)) continue;
                 string label = "";
-                if (dependantReg.Lifetime > rootLifetime)
+                if (dependantReg.Lifetime > currentNodeLifetime.Lifetime)
                 {
                     label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
                 }
@@ -185,11 +184,10 @@ namespace DependencyAnalyzer.Visualizers
             sb.AppendLine("\t rankdir=LR;");
             CreateGraphvizLegend(sb);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             var visited = new List<DependencyNode>();
-            TraverseConsumerGraph(startNode, project, rootLifetime, currentPath, visited, sb);
+            TraverseConsumerGraph(startNode, project, currentPath, visited, sb);
             visited = new List<DependencyNode>();
-            TraverseDependencyGraph(startNode, project, rootLifetime, currentPath, visited, sb);
+            TraverseDependencyGraph(startNode, project, currentPath, visited, sb);
 
             sb.AppendLine("}");
             return sb.ToString();
@@ -268,7 +266,7 @@ namespace DependencyAnalyzer.Visualizers
             var currentPath = new Stack<INamedTypeSymbol>();
             var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             var visited = new List<DependencyNode>();
-            TraverseDependencyGraph(startNode, project, rootLifetime, currentPath, visited, sb);
+            TraverseDependencyGraph(startNode, project, currentPath, visited, sb);
 
             sb.AppendLine("}");
             return sb.ToString();
@@ -285,12 +283,11 @@ namespace DependencyAnalyzer.Visualizers
             var controllersInProject = graph.Nodes.Where(
                 node => node.RegistrationInfo.Any(reg => reg.Key == project && reg.Value.Lifetime == LifetimeTypes.Controller));
 
-            var rootLifetime = LifetimeTypes.Controller;
             var visited = new List<DependencyNode>();
             foreach (var node in controllersInProject)
             {
                 var currentPath = new Stack<INamedTypeSymbol>();
-                TraverseDependencyGraph(node, project, rootLifetime, currentPath, visited, sb);
+                TraverseDependencyGraph(node, project, currentPath, visited, sb);
             }
 
             sb.AppendLine("}");
@@ -334,7 +331,7 @@ namespace DependencyAnalyzer.Visualizers
             return depInterfaces.Concat(relevantImplementations).ToList();
         }
 
-        private static void TraverseDependencyGraph(DependencyNode node, string project, LifetimeTypes rootLifetime, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb, bool ambiguousRegistrationSubDependency = false)
+        private static void TraverseDependencyGraph(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb, bool ambiguousRegistrationSubDependency = false)
         {
             if (path.Contains(node.Class, new FullyQualifiedNameComparer()))
             {
@@ -347,20 +344,20 @@ namespace DependencyAnalyzer.Visualizers
             visitedNodes.Add(node);
             path.Push(node.Class);
 
-            if (!node.RegistrationInfo.TryGetValue(project, out var projectRegistration))
+            if (!node.RegistrationInfo.TryGetValue(project, out var currentNodeRegistration))
             {
                 //Create this node and edge from the parent perspective
                 return;
             }
             
-            CreateNode(sb, node.ClassName, projectRegistration.Lifetime);
+            CreateNode(sb, node.ClassName, currentNodeRegistration.Lifetime);
 
             foreach (var dependency in node.DependsOn)
             {
-                TraverseDependencyGraph(dependency, project, rootLifetime, path, visitedNodes, sb, ambiguousRegistrationSubDependency);
+                TraverseDependencyGraph(dependency, project, path, visitedNodes, sb, ambiguousRegistrationSubDependency);
             }
 
-            ambiguousRegistrationSubDependency = ambiguousRegistrationSubDependency || projectRegistration.UnresolvableImplementation;
+            ambiguousRegistrationSubDependency = ambiguousRegistrationSubDependency || currentNodeRegistration.UnresolvableImplementation;
 
             var dependencies = GetReleventInterfaceAndImplementations(node.DependsOn, project);
             foreach (var dependency in dependencies)
@@ -374,7 +371,7 @@ namespace DependencyAnalyzer.Visualizers
                     // (e.g., a factory returning an unknown type), this missing registration might be acceptable.
                     if (!ambiguousRegistrationSubDependency)
                     {
-                        if (projectRegistration.IsFactoryResolved)
+                        if (currentNodeRegistration.IsFactoryResolved)
                         {
                             var color = "\"#808080\"";
                             CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
@@ -393,7 +390,7 @@ namespace DependencyAnalyzer.Visualizers
                     continue;
                 }
 
-                if (dependencyReg.Lifetime < rootLifetime)
+                if (dependencyReg.Lifetime < currentNodeRegistration.Lifetime)
                 {
                     label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
                 }
