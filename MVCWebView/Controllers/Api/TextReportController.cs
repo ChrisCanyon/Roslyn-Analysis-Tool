@@ -40,6 +40,7 @@ namespace MVCWebView.Controllers.Api
                 {
                     return BadRequest("Class name is required for single node reports");
                 }
+
                 var node = _graph.Nodes.Where(x =>
                         string.Compare(x.ClassName, className, true) == 0).FirstOrDefault();
                 if (node == null)
@@ -50,9 +51,9 @@ namespace MVCWebView.Controllers.Api
                 {
                     return NotFound($"{className} not registered in {project}");
                 }
-            }
 
-            className = _graph.Nodes.Where(x => string.Equals(x.ClassName, className, StringComparison.OrdinalIgnoreCase)).First().ClassName;
+                className = _graph.Nodes.Where(x => string.Equals(x.ClassName, className, StringComparison.OrdinalIgnoreCase)).First().ClassName;
+            }
 
             ColoredStringBuilder? result = type switch
             {

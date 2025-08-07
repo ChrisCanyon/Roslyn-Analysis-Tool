@@ -64,7 +64,7 @@ namespace DependencyAnalyzer
             if (path.Contains(node.Class, comparer))
             {
                 sb.Append($"Cycle Detected: ", ConsoleColor.White);
-                sb.AppendLine($"{node.Class.Name} <-", ConsoleColor.Red);
+                sb.Append($"{node.Class.Name} <- ", ConsoleColor.Red);
                 foreach (var step in path)
                 {
                     if(comparer.Equals(node.Class, step))
@@ -77,6 +77,7 @@ namespace DependencyAnalyzer
                         sb.Append($"{step.Name} <- ", ConsoleColor.White);
                     }
                 }
+                sb.AppendLine("", ConsoleColor.Black);
                 return;
             }
             if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
