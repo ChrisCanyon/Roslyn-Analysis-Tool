@@ -13,10 +13,7 @@ builder.Services.AddControllersWithViews()
 MSBuildLocator.RegisterDefaults();
 using var workspace = MSBuildWorkspace.Create();
 
-//string solutionPath = "C:\\TylerDev\\eagle-vitals\\eagle-vitals.sln";
-string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\InSite.sln";
-//string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\Prepaid\\Prepaid.sln";
-//string solutionPath = "C:\\TylerDev\\Capital\\Source\\Capital.sln";
+string solutionPath = "C:\\PathToYour\\Solution.sln";
 
 //Generate full dependency graph for project and register as single to cache it
 var stopwatch = Stopwatch.StartNew();

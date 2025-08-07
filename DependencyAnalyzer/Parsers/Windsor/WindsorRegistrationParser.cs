@@ -1,6 +1,7 @@
 ﻿using DependencyAnalyzer.Interfaces;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Collections.Generic;
 
 namespace DependencyAnalyzer.Parsers.Windsor
 {
@@ -222,6 +223,49 @@ namespace DependencyAnalyzer.Parsers.Windsor
             };
         }
 
+
+        //Assume all interfaces for now
+        private IEnumerable<RegistrationInfo> CreateRegistrationsFromBasedOn(InvocationExpressionSyntax basesOnExpression, GenericNameSyntax methodName, SemanticModel model, string projectName)
+        {
+            var lifestyle = ExtractLifestyleFromChain(basesOnExpression);
+            var ret = new List<RegistrationInfo>();
+            
+            List<INamedTypeSymbol> registeredTypes = new List<INamedTypeSymbol>();
+            registeredTypes.AddRange(GetTypeArgumentsFromInvocation(basesOnExpression, model));
+            registeredTypes.AddRange(GetTypeArgumentsFromInvocationArguments(basesOnExpression, model));
+
+            if(registeredTypes.Count == 0)
+            {
+                Console.WriteLine("No symbols found in Based On registration");
+                Console.WriteLine($"expression: {basesOnExpression.ToFullString()}");
+                return ret;
+            }
+
+            //go through each type argument
+            foreach(INamedTypeSymbol type in registeredTypes)
+            {
+                if(type.TypeKind == TypeKind.Interface)
+                {
+                    ret.Add(new RegistrationInfo
+                    {
+                        Interface = type,
+                        Implementation = null,
+                        Lifetime = lifestyle,
+                        ProjectName = projectName,
+                        UnresolvableImplementation = true,
+                        IsFactoryResolved = true //this indicates upstream to connect all implementations together
+                    });
+                }
+                else
+                {
+                    Console.WriteLine("Non interace passed into Based On registration");
+                    Console.WriteLine($"expression: {basesOnExpression.ToFullString()}");
+                }
+            }
+
+            return ret;
+        }
+
         private IEnumerable<RegistrationInfo> CreateRegistrationsFromComponentFor(ExpressionSyntax componentForExpression, GenericNameSyntax methodName, SemanticModel model, string projectName)
         {
             var lifestyle = ExtractLifestyleFromChain(componentForExpression);
@@ -276,14 +320,32 @@ namespace DependencyAnalyzer.Parsers.Windsor
             foreach (var registrationArg in registerInvocation.ArgumentList.Arguments)
             {
                 var invocation = FindDescendantInvocationInChain(registrationArg.Expression, model, "For", "Castle.MicroKernel.Registration.Component");
-                if (invocation == null) continue;
-
-                if (invocation is not null &&
-                        invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax methodName } &&
-                        methodName.TypeArgumentList.Arguments.Count > 0)
+                if (invocation != null)
                 {
-                    ret.AddRange(CreateRegistrationsFromComponentFor(invocation, methodName, model, projectName));
+                    if (invocation is not null &&
+                            invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax methodName } &&
+                            methodName.TypeArgumentList.Arguments.Count > 0)
+                    {
+                        ret.AddRange(CreateRegistrationsFromComponentFor(invocation, methodName, model, projectName));
+                    }
+                    continue;
                 }
+
+                invocation = FindDescendantInvocationInChain(
+                    registrationArg.Expression,
+                    model,
+                    "BasedOn",
+                    "Castle.MicroKernel.Registration.FromDescriptor");
+                if (invocation != null)
+                {
+                    if (invocation is not null &&
+                            invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax methodName })
+                    {
+                        ret.AddRange(CreateRegistrationsFromBasedOn(invocation, methodName, model, projectName));
+                    }
+                    continue;
+                }
+
             }
             return ret;
         }

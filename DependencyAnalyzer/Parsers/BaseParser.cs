@@ -241,7 +241,8 @@ public abstract class BaseParser
     /// <summary>
     /// Only finds invocations on concrete classes / implementations
     /// </summary>
-    protected static InvocationExpressionSyntax? FindDescendantInvocationInChain(ExpressionSyntax expression, SemanticModel model, string methodName, string fullyQualifiedDeclaringType)
+    //TODO fix to return actual invocation
+    protected static InvocationExpressionSyntax? FindDescendantInvocationInChainOld(ExpressionSyntax expression, SemanticModel model, string methodName, string fullyQualifiedDeclaringType)
     {
         SyntaxNode current = expression;
 
@@ -272,6 +273,48 @@ public abstract class BaseParser
 
             current = memberAccess.Expression;
         }
+        return null;
+    }
+
+    protected static InvocationExpressionSyntax? FindDescendantInvocationInChain(
+    ExpressionSyntax expression,
+    SemanticModel model,
+    string methodName,
+    string fullyQualifiedDeclaringType)
+    {
+        SyntaxNode current = expression;
+
+        while (true)
+        {
+            if (current is InvocationExpressionSyntax invocation &&
+                invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+            {
+                var name = memberAccess.Name.Identifier.Text;
+
+                if (name == methodName)
+                {
+                    var symbol = model.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+
+                    if (symbol?.ContainingType != null &&
+                        IsSameOrSubclassOf(symbol.ContainingType, fullyQualifiedDeclaringType))
+                    {
+                        return invocation;
+                    }
+                }
+
+                // Continue down the chain
+                current = memberAccess.Expression;
+            }
+            else if (current is MemberAccessExpressionSyntax ma)
+            {
+                current = ma.Expression;
+            }
+            else
+            {
+                break;
+            }
+        }
+
         return null;
     }
 

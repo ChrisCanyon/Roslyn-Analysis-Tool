@@ -3,10 +3,7 @@ using Microsoft.CodeAnalysis.MSBuild;
 using System.Diagnostics;
 
 var stopwatch = Stopwatch.StartNew(); // Start the timer
-string solutionPath = "C:\\TylerDev\\eagle-vitals\\eagle-vitals.sln";
-//string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\InSite.sln";
-//string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\Prepaid\\Prepaid.sln";
-//string solutionPath = "C:\\TylerDev\\Capital\\Source\\Capital.sln";
+string solutionPath = "C:\\PathToYour\\Solution.sln";
 
 using var workspace = MSBuildWorkspace.Create();
 var s = await workspace.OpenSolutionAsync(solutionPath);
