@@ -1,8 +1,9 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using DependencyAnalyzer.Parsers;
+using Microsoft.CodeAnalysis;
 
 namespace DependencyAnalyzer
 {
-    public class DependencyAnalyzer
+    public class DependencyAnalyzer : BaseParser
     {
         private readonly Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> DependencyMap;
         private readonly SolutionAnalyzer SolutionAnalyzer;
@@ -26,10 +27,22 @@ namespace DependencyAnalyzer
                 {
                     foreach (var parameter in constructor.Parameters)
                     {
-                        if (parameter.Type is INamedTypeSymbol depType &&
-                            depType.Locations.Any(loc => loc.IsInSource)) // Only include source-defined dependencies
-                        {
-                            dependencies.Add(depType);
+                        if (parameter.Type is INamedTypeSymbol depType) {
+                            if (depType.Locations.Any(loc => loc.IsInSource))
+                            {
+                                dependencies.Add(depType);
+                            }
+
+                            if (depType.IsGenericType)
+                            {
+                                foreach (var arg in depType.TypeArguments.OfType<INamedTypeSymbol>())
+                                {
+                                    if (arg.Locations.Any(loc => loc.IsInSource))
+                                    {
+                                        dependencies.Add(arg);
+                                    }
+                                }
+                            }
                         }
                     }
                 }

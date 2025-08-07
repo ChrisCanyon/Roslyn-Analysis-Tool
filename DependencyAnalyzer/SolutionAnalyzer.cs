@@ -134,7 +134,7 @@ namespace DependencyAnalyzer
                         //Or a type that implements an interface with Unresolvable Implementation (probably weird factory method)
                         (registration.UnresolvableImplementation && 
                             registration.Interface != null && 
-                            symbol.Interfaces.Any(currentSymbolInterface => comparer.Equals(registration.Interface, currentSymbolInterface))
+                            symbol.AllInterfaces.Any(currentSymbolInterface => comparer.Equals(registration.Interface, currentSymbolInterface.OriginalDefinition))
                         )).ToList();
             }
 

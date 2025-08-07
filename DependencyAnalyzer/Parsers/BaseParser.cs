@@ -241,41 +241,6 @@ public abstract class BaseParser
     /// <summary>
     /// Only finds invocations on concrete classes / implementations
     /// </summary>
-    //TODO fix to return actual invocation
-    protected static InvocationExpressionSyntax? FindDescendantInvocationInChainOld(ExpressionSyntax expression, SemanticModel model, string methodName, string fullyQualifiedDeclaringType)
-    {
-        SyntaxNode current = expression;
-
-        while (true)
-        {
-
-            // Walk down to next invocation (skip pure property/member accesses)
-            while (current is MemberAccessExpressionSyntax ma)
-                current = ma.Expression;
-
-            if (current is not InvocationExpressionSyntax invocation ||
-            invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
-            {
-                break;
-            }
-
-            if (memberAccess.Name is GenericNameSyntax genericName &&
-                genericName.Identifier.Text == methodName)
-            {
-                var symbol = model.GetSymbolInfo(memberAccess.Expression).Symbol;
-
-                if (symbol is INamedTypeSymbol typeSymbol &&
-                    IsSameOrSubclassOf(typeSymbol, fullyQualifiedDeclaringType))
-                {
-                    return invocation;
-                }
-            }
-
-            current = memberAccess.Expression;
-        }
-        return null;
-    }
-
     protected static InvocationExpressionSyntax? FindDescendantInvocationInChain(
     ExpressionSyntax expression,
     SemanticModel model,
