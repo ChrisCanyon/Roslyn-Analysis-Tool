@@ -2,9 +2,7 @@
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
-using System.IO;
 using System.Reflection;
-using System.Security.Cryptography.Xml;
 
 namespace DependencyAnalyzer.Parsers
 {
@@ -53,8 +51,8 @@ namespace DependencyAnalyzer.Parsers
 
             var resolveTargets = new[]
             {
-            //    ("Dispose", "System.IDisposable"),
-            //    ("DisposeAsync", "System.IAsyncDisposable"),
+                ("Dispose", "System.IDisposable"),
+                ("DisposeAsync", "System.IAsyncDisposable"),
                 ("Release", "Castle.Windsor.IWindsorContainer"),
             };
             var comparer = new FullyQualifiedNameComparer();

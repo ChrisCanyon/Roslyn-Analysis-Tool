@@ -2,10 +2,11 @@
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using DependencyAnalyzer.Parsers.MicrosoftDI;
 using DependencyAnalyzer.Parsers.Windsor;
+using DependencyAnalyzer.Parsers;
 
 namespace DependencyAnalyzer
 {
-    public class SolutionAnalyzer
+    public class SolutionAnalyzer : BaseParser
     {
         public List<INamedTypeSymbol> AllTypes { get; private set; }
         public List<RegistrationInfo> RegistrationInfos { get; private set; }
@@ -53,9 +54,6 @@ namespace DependencyAnalyzer
 
             allTypes.AddRange(await allTypesTask);
 
-            var apiTPRegi = registrationInfos.Where(x => x.ProjectName == "Api.TylerPayments").ToList();
-            var siteContextRegi = registrationInfos.Where(x => x.Implementation?.ToDisplayString() == "Core.InSite.SiteContext").ToList();
-
             return new SolutionAnalyzer(allTypes, registrationInfos);
         }
 
@@ -64,9 +62,8 @@ namespace DependencyAnalyzer
             if (symbol == null) return false;
 
             // Check interface implementation (Classic ASP.NET MVC or Web API)
-            if (symbol.AllInterfaces.Any(i =>
-                i.ToDisplayString() == "System.Web.Mvc.IController" ||
-                i.ToDisplayString() == "System.Web.Http.Controllers.IHttpController"))
+            if (ImplementsInterface(symbol, "System.Web.Mvc.IController") ||
+                ImplementsInterface(symbol, "System.Web.Http.Controllers.IHttpController"))
                 return true;
 
             // Check class name
@@ -74,15 +71,11 @@ namespace DependencyAnalyzer
                 return true;
 
             // Check base types for Controller or ControllerBase
-            for (var baseType = symbol.BaseType; baseType != null; baseType = baseType.BaseType)
-            {
-                var baseName = baseType.ToDisplayString();
-                if (baseName == "Microsoft.AspNetCore.Mvc.Controller" ||
-                    baseName == "Microsoft.AspNetCore.Mvc.ControllerBase" ||
-                    baseName == "System.Web.Mvc.Controller" ||
-                    baseName == "System.Web.Http.ApiController")
+            if(IsSameOrSubclassOf(symbol, "Microsoft.AspNetCore.Mvc.Controller") ||
+                IsSameOrSubclassOf(symbol, "Microsoft.AspNetCore.Mvc.ControllerBase") ||
+                IsSameOrSubclassOf(symbol, "System.Web.Mvc.Controller") ||
+                IsSameOrSubclassOf(symbol, "System.Web.Http.ApiController"))
                     return true;
-            }
 
             // Check for [ApiController] or [Controller] attribute
             if (symbol.GetAttributes().Any(attr =>
