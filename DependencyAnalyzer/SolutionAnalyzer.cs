@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using DependencyAnalyzer.Parsers.MicrosoftDI;
 using DependencyAnalyzer.Parsers.Windsor;
 using DependencyAnalyzer.Parsers;
+using System.Collections.Immutable;
 
 namespace DependencyAnalyzer
 {
@@ -89,9 +90,9 @@ namespace DependencyAnalyzer
             return false;
         }
 
-        public Dictionary<string, RegistrationInfo> GetRegistrationsForSymbol(INamedTypeSymbol symbol)
+        public List<RegistrationInfo> GetRegistrationsForSymbol(INamedTypeSymbol symbol)
         {
-            var ret = new Dictionary<string, RegistrationInfo>();
+            var ret = new List<RegistrationInfo>();
             var comparer = new FullyQualifiedNameComparer();
 
             //if controller pretend its transient
@@ -100,55 +101,70 @@ namespace DependencyAnalyzer
                 var projectName = symbol.ContainingAssembly?.Name ?? string.Empty;
                 if (projectName == string.Empty) return ret;
 
-                ret.TryAdd(projectName, new RegistrationInfo
+                ret.Add(new RegistrationInfo
                 {
-                    Interface = null,
-                    Implementation = symbol,
+                    ServiceInterface = null,
+                    ImplementationType = symbol,
                     Lifetime = LifetimeTypes.Controller,
                     ProjectName = projectName
                 });
                 return ret;
             }
 
-
             var relatedRegistrations = new List<RegistrationInfo>();
 
             if(symbol.TypeKind == TypeKind.Interface)
             {
                 relatedRegistrations = RegistrationInfos.Where(registration =>
-                    comparer.Equals(registration.Interface, symbol)
+                    comparer.Equals(registration.ServiceInterface, symbol)
                 ).ToList();
             }
             else if(symbol.TypeKind == TypeKind.Class)
             {
-                relatedRegistrations = RegistrationInfos.Where(registration =>
-                        //If this is an implementation
-                        comparer.Equals(registration.Implementation, symbol) ||
-                        //Or a type that implements an interface with Unresolvable Implementation (probably weird factory method)
-                        (registration.UnresolvableImplementation && 
-                            registration.Interface != null && 
-                            symbol.AllInterfaces.Any(currentSymbolInterface => comparer.Equals(registration.Interface, currentSymbolInterface.OriginalDefinition))
-                        )).ToList();
+                var exactInterface = symbol.AllInterfaces.ToImmutableHashSet(comparer);
+                var openInterfaces = symbol.AllInterfaces.Select(i => i.OriginalDefinition)
+                                    .ToImmutableHashSet(comparer);
+
+                relatedRegistrations = RegistrationInfos.Where(registration => {
+                    //If this is an implementation
+                    if (comparer.Equals(registration.ImplementationType, symbol)) 
+                        return true;
+
+                    //Or a type that implements an interface with Unresolvable Implementation (probably weird factory method or registration from assembly)
+                    if (registration.UnresolvableImplementation &&
+                        registration.ServiceInterface != null)
+                    {
+                        // 1) constructed match: IClass<A>
+                        if (exactInterface.Contains(registration.ServiceInterface))
+                            return true;
+
+                        // 2) open generic match: IClass<> vs IClass<A>
+                        if (openInterfaces.Contains(registration.ServiceInterface.OriginalDefinition))
+                            return true;
+                    }
+                    return false;
+                }
+                ).ToList();
             }
 
             foreach (var registration in relatedRegistrations)
             {
                 //I think i need to add the implementation to the factory method here
                 //if is factory method and has interface already
-                if(symbol.TypeKind == TypeKind.Class && registration.Interface != null && registration.Implementation == null)
+                if(symbol.TypeKind == TypeKind.Class && registration.ServiceInterface != null && registration.ImplementationType == null)
                 {
                     var completeRegistration = new RegistrationInfo
                     {
-                        Interface = registration.Interface,
-                        Implementation = symbol,
+                        ServiceInterface = registration.ServiceInterface,
+                        ImplementationType = symbol,
                         Lifetime = registration.Lifetime,
                         ProjectName = registration.ProjectName,
                     };
-                    ret.TryAdd(registration.ProjectName, completeRegistration);
+                    ret.Add(completeRegistration);
                 }
                 else
                 {
-                    ret.TryAdd(registration.ProjectName, registration);
+                    ret.Add(registration);
                 }
             }
 

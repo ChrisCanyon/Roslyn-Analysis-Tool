@@ -66,12 +66,16 @@ namespace DependencyAnalyzer.Parsers.Windsor
 
                 foreach (var invocation in invocations)
                 {
+                    var invocationRegistrations = new List<RegistrationInfo>();
                     if (installerSymbols.Any())
                     {
-                        registrations.AddRange(await CreateRegistrationsForInstaller(invocation, installerSymbols, solution, model, project.Name));
+                        invocationRegistrations.AddRange(await CreateRegistrationsForInstaller(invocation, installerSymbols, solution, model, project.Name));
                     }
-
-                    registrations.AddRange(ParseRegistration(invocation, model, project.Name));
+                    if(!invocationRegistrations.Any(x => x.ProjectName == project.Name))
+                    {
+                        invocationRegistrations.AddRange(ParseRegistration(invocation, model, project.Name));
+                    }
+                    registrations.AddRange(invocationRegistrations);
                 }
             }
 
@@ -109,10 +113,12 @@ namespace DependencyAnalyzer.Parsers.Windsor
                                             registration.Select(incompleteRegistration =>
                                             new RegistrationInfo
                                             {
-                                                Interface = incompleteRegistration.Interface,
-                                                Implementation = incompleteRegistration.Implementation,
+                                                ServiceInterface = incompleteRegistration.ServiceInterface,
+                                                ImplementationType = incompleteRegistration.ImplementationType,
                                                 Lifetime = incompleteRegistration.Lifetime,
-                                                ProjectName = calledProject
+                                                ProjectName = calledProject,
+                                                IsFactoryResolved = incompleteRegistration.IsFactoryResolved,
+                                                UnresolvableImplementation = incompleteRegistration.UnresolvableImplementation
                                             }
                                         ));
         }
@@ -225,11 +231,11 @@ namespace DependencyAnalyzer.Parsers.Windsor
 
 
         //Assume all interfaces for now
-        private IEnumerable<RegistrationInfo> CreateRegistrationsFromBasedOn(InvocationExpressionSyntax basesOnExpression, GenericNameSyntax methodName, SemanticModel model, string projectName)
+        private IEnumerable<RegistrationInfo> CreateRegistrationsFromBasedOn(InvocationExpressionSyntax basesOnExpression, SemanticModel model, string projectName)
         {
             var lifestyle = ExtractLifestyleFromChain(basesOnExpression);
             var ret = new List<RegistrationInfo>();
-            
+
             List<INamedTypeSymbol> registeredTypes = new List<INamedTypeSymbol>();
             registeredTypes.AddRange(GetTypeArgumentsFromInvocation(basesOnExpression, model));
             registeredTypes.AddRange(GetTypeArgumentsFromInvocationArguments(basesOnExpression, model));
@@ -248,11 +254,11 @@ namespace DependencyAnalyzer.Parsers.Windsor
                 {
                     ret.Add(new RegistrationInfo
                     {
-                        Interface = type,
-                        Implementation = null,
+                        ServiceInterface = type,
+                        ImplementationType = null,
                         Lifetime = lifestyle,
                         ProjectName = projectName,
-                        UnresolvableImplementation = true,
+                        UnresolvableImplementation = true, //this indicates upstream to connect all implementations together
                         IsFactoryResolved = true //this indicates upstream to connect all implementations together
                     });
                 }
@@ -338,10 +344,9 @@ namespace DependencyAnalyzer.Parsers.Windsor
                     "Castle.MicroKernel.Registration.FromDescriptor");
                 if (invocation != null)
                 {
-                    if (invocation is not null &&
-                            invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax methodName })
+                    if (invocation is not null)
                     {
-                        ret.AddRange(CreateRegistrationsFromBasedOn(invocation, methodName, model, projectName));
+                        ret.AddRange(CreateRegistrationsFromBasedOn(invocation, model, projectName));
                     }
                     continue;
                 }
@@ -367,8 +372,8 @@ namespace DependencyAnalyzer.Parsers.Windsor
             {
                 ret.Add(new RegistrationInfo
                 {
-                    Interface = registeredInterface,
-                    Implementation = null,
+                    ServiceInterface = registeredInterface,
+                    ImplementationType = null,
                     Lifetime = regType,
                     ProjectName = projectName,
                     UnresolvableImplementation = true,
@@ -387,8 +392,8 @@ namespace DependencyAnalyzer.Parsers.Windsor
                 }
                 ret.Add(new RegistrationInfo
                 {
-                    Interface = registeredInterface,
-                    Implementation = impType,
+                    ServiceInterface = registeredInterface,
+                    ImplementationType = impType,
                     Lifetime = regType,
                     ProjectName = projectName,
                     IsFactoryResolved = implStrat.ImplStratType == ImplementationStrategyType.Factory
@@ -404,8 +409,8 @@ namespace DependencyAnalyzer.Parsers.Windsor
             var implStrat = GetImplementationStrategy(componentForExpression, model);
             return new RegistrationInfo
             {
-                Interface = null,
-                Implementation = registeredClass,
+                ServiceInterface = null,
+                ImplementationType = registeredClass,
                 Lifetime = regType,
                 ProjectName = projectName,
                 IsFactoryResolved = implStrat.ImplStratType == ImplementationStrategyType.Factory

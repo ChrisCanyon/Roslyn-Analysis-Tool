@@ -1,5 +1,7 @@
+using Microsoft.Build.Evaluation;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.FindSymbols;
 
 namespace DependencyAnalyzer.Parsers;
 
@@ -130,8 +132,9 @@ public abstract class BaseParser
     {
         var result = new HashSet<string>();
         var comparer = new FullyQualifiedNameComparer();
-        var installContexts = await FindWindsorInstallInvocationContextsForSolution(solution);
 
+        // windsor container Install(new Installer()) calls
+        var installContexts = await FindWindsorInstallInvocationContextsForSolution(solution);
         foreach (var installContext in installContexts)
         {
             var model = installContext.SemanticModel;

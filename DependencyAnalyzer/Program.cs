@@ -1,4 +1,5 @@
 ﻿using DependencyAnalyzer;
+using DependencyAnalyzer.Parsers;
 using Microsoft.CodeAnalysis.MSBuild;
 using System.Diagnostics;
 
@@ -8,7 +9,8 @@ string solutionPath = "C:\\PathToYour\\Solution.sln";
 using var workspace = MSBuildWorkspace.Create();
 var s = await workspace.OpenSolutionAsync(solutionPath);
 var solutionAnalyzer = await SolutionAnalyzer.Build(s);
-var dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
+ManualResolutionParser manParse = new ManualResolutionParser(s, solutionAnalyzer);
+var dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer, manParse);
 var graph = dependencyAnalyzer.BuildFullDependencyGraph();
 
 stopwatch.Stop(); // Stop the timer

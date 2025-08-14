@@ -10,6 +10,7 @@ namespace DependencyAnalyzer.Parsers
     }
     public record ManualLifetimeInteractionInfo(
         INamedTypeSymbol Type,
+        INamedTypeSymbol ContainingType,
         string CodeSnippet,
         string Project,
         string InvocationPath,

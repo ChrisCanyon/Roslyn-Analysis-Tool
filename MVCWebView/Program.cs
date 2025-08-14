@@ -13,7 +13,7 @@ builder.Services.AddControllersWithViews()
 MSBuildLocator.RegisterDefaults();
 using var workspace = MSBuildWorkspace.Create();
 
-string solutionPath = "C:\\PathToYour\\Solution.sln";
+string solutionPath = "C:PathToSolution.sln";
 
 //Generate full dependency graph for project and register as single to cache it
 var stopwatch = Stopwatch.StartNew();
@@ -36,17 +36,18 @@ Console.WriteLine($"~~~ ManualResolutionParser build ~~~");
 Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
 stopwatch.Restart();
 
-DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
+DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer, manParse);
 DependencyGraph graph = dependencyAnalyzer.BuildFullDependencyGraph();
 stopwatch.Stop(); 
 Console.WriteLine($"~~~ graph build ~~~");
 Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
 
+
 builder.Services.AddSingleton(solutionAnalyzer);
 builder.Services.AddSingleton(dependencyAnalyzer);
 builder.Services.AddSingleton(graph);
 builder.Services.AddSingleton(s);
-builder.Services.AddScoped<ErrorReportRunner>();
+//builder.Services.AddScoped<ErrorReportRunner>();
 builder.Services.AddSingleton(manParse);
 
 var app = builder.Build();

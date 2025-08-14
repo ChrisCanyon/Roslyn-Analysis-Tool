@@ -7,8 +7,11 @@ namespace DependencyAnalyzer
     {
         private readonly Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> DependencyMap;
         private readonly SolutionAnalyzer SolutionAnalyzer;
-        public DependencyAnalyzer(SolutionAnalyzer solutionAnalyzer) {
+        private readonly ManualResolutionParser ManualResolutionParser;
+        public DependencyAnalyzer(SolutionAnalyzer solutionAnalyzer, ManualResolutionParser manualResolutionParser)
+        {
             SolutionAnalyzer = solutionAnalyzer;
+            ManualResolutionParser = manualResolutionParser;
             DependencyMap = GetClassDependencies();
         }
 
@@ -23,164 +26,211 @@ namespace DependencyAnalyzer
             {
                 var dependencies = new List<INamedTypeSymbol>();
 
-                foreach (var constructor in classSymbol.Constructors)
-                {
-                    foreach (var parameter in constructor.Parameters)
-                    {
-                        if (parameter.Type is INamedTypeSymbol depType) {
-                            if (depType.Locations.Any(loc => loc.IsInSource))
-                            {
-                                dependencies.Add(depType);
-                            }
-
-                            if (depType.IsGenericType)
-                            {
-                                foreach (var arg in depType.TypeArguments.OfType<INamedTypeSymbol>())
-                                {
-                                    if (arg.Locations.Any(loc => loc.IsInSource))
-                                    {
-                                        dependencies.Add(arg);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
+                dependencies.AddRange(GetDependenciesFromConstructors(classSymbol.Constructors));
+                dependencies.AddRange(GetManualResolvedDependenciesForClass(classSymbol));
+               
                 dependencyMap[classSymbol] = dependencies;
             }
 
             return dependencyMap;
         }
 
-        //TODO make node map a class variable
-        public DependencyGraph BuildFullDependencyGraph()
-        {
-            var nodeMap = CreateBaseNodes();
-
-            WireDependencies(nodeMap);
-
-            WireInterfaceImplementations(nodeMap);
-
-            ExpandInterfaces(nodeMap);
-
-            return new DependencyGraph(nodeMap.Values.ToList());
-        }
-
-        private void ExpandInterfaces(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
-        {
-            ExpandInterfaceDownstreamEdges(nodeMap);
-            ExpandInterfaceUpstreamEdges(nodeMap);
-        }
-
-        private Dictionary<INamedTypeSymbol, DependencyNode> CreateBaseNodes()
+        private IEnumerable<INamedTypeSymbol> GetManualResolvedDependenciesForClass(INamedTypeSymbol classSymbol)
         {
             var comparer = new FullyQualifiedNameComparer();
-            var nodeMap = new Dictionary<INamedTypeSymbol, DependencyNode>(comparer);
+            return ManualResolutionParser.ManuallyResolvedSymbols
+                .Where(x => comparer.Equals(x.ContainingType, classSymbol))
+                .Select(x => x.Type);
+        }
 
+        private List<INamedTypeSymbol> GetDependenciesFromConstructors(IEnumerable<IMethodSymbol> constructors)
+        {
+            var ret = new List<INamedTypeSymbol>();
+            foreach (var constructor in constructors)
+            {
+                foreach (var parameter in constructor.Parameters)
+                {
+                    if (parameter.Type is INamedTypeSymbol depType)
+                    {
+                        if (depType.Locations.Any(loc => loc.IsInSource))
+                        {
+                            ret.Add(depType);
+                        }
+
+                        if (depType.IsGenericType)
+                        {
+                            if (depType.TypeArguments.Length > 0 &&
+                                (depType.Name is "IEnumerable" or "Lazy"))
+                            {
+                                foreach (var arg in depType.TypeArguments.OfType<INamedTypeSymbol>())
+                                {
+                                    if (arg.Locations.Any(loc => loc.IsInSource))
+                                    {
+                                        ret.Add(arg);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                ret.Add(depType);
+                            }
+                        }
+                    }
+                }
+            }
+            return ret;
+        }
+
+        public DependencyGraph BuildFullDependencyGraph()
+        {
+            var nodes = new List<DependencyNode>();
             foreach (var symbol in SolutionAnalyzer.AllTypes)
             {
-                var node = new DependencyNode
-                {
-                    Class = symbol,
-                    ClassName = symbol.ToDisplayString(),                   // Fully qualified type name
-                    RegistrationInfo = SolutionAnalyzer.GetRegistrationsForSymbol(symbol)
-                };
-
-                nodeMap[symbol] = node;
+                nodes.AddRange(CreateBaseNode(symbol));
             }
 
-            return nodeMap;
+            WireDependencies(nodes);
+
+            DedupeDependencies(nodes);
+
+            return new DependencyGraph(nodes.ToList());
+        }
+
+        private void DedupeDependencies(List<DependencyNode> nodes)
+        {
+            var comparer = new RegInfoKeyComparer();
+
+            foreach (var node in nodes)
+            {
+                node.DependsOn = node.DependsOn
+                .DistinctBy(n => (n.ImplementationType, n.ServiceInterface, n.ProjectName, n.Lifetime), comparer)
+                .ToList();
+
+                node.DependedOnBy = node.DependedOnBy
+                    .DistinctBy(n => (n.ImplementationType, n.ServiceInterface, n.ProjectName, n.Lifetime), comparer)
+                    .ToList();
+            }
+        }
+
+        private List<DependencyNode> CreateBaseNode(INamedTypeSymbol symbol)
+        {
+            var comparer = new FullyQualifiedNameComparer();
+            var nodes = new List<DependencyNode>();
+
+            if (symbol.TypeKind == TypeKind.Interface)
+                return nodes;
+
+            var allRegistrations = SolutionAnalyzer.GetRegistrationsForSymbol(symbol);
+            if (allRegistrations.Count == 0)
+            {
+                nodes.Add(new DependencyNode
+                {
+                    ImplementationType = symbol,
+                    ServiceInterface = null,
+                    ProjectName = symbol.ContainingAssembly.Name,
+                    ClassName = symbol.ToDisplayString(),// Fully qualified type name
+                    Lifetime = LifetimeTypes.Unregistered
+                });
+                return nodes;
+            }
+
+            // Group registrations by (implementation type, service interface).
+            // A single class can implement and be registered as multiple different services,
+            // so each (impl, service) pair will produce its own node in the dependency graph.
+            var regiGroups = allRegistrations.GroupBy(x => (
+                        x.ImplementationType,
+                        x.ServiceInterface,
+                        x.ProjectName,
+                        x.Lifetime
+            ), new RegInfoKeyComparer());
+
+            foreach ( var regiGroup in regiGroups)
+            {
+                if(regiGroup.Count() > 1)
+                {
+                    Console.WriteLine("Registration for same service/impl/project/lifestyle");
+                    regiGroup.ToList().ForEach(x => 
+                        Console.WriteLine($"Implementation {x.ImplementationType?.ToDisplayString()} " +
+                        $"Interface {x.ServiceInterface?.ToDisplayString()} " +
+                        $"Project {x.ProjectName} " +
+                        $"Lifetime {x.Lifetime}"));
+                }
+                var reg = regiGroup.First();
+
+                nodes.Add(new DependencyNode
+                {
+                    ImplementationType = symbol,
+                    ServiceInterface = regiGroup.Key.ServiceInterface,
+                    ClassName = symbol.ToDisplayString(),// Fully qualified type name
+                    Lifetime = reg.Lifetime,
+                    ProjectName = reg.ProjectName
+                });
+            }
+
+            return nodes;
         }
 
         private void WireDependencies(
-            Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
+            List<DependencyNode> nodes)
         {
-            var comparer = SymbolEqualityComparer.Default;
+            var comparer = new FullyQualifiedNameComparer();
 
-            foreach (var (classSymbol, dependencies) in DependencyMap)
+            //Interfaces dont have dependencies. Assume the dependantSymbol is a concrete class
+            foreach (var (dependantSmybol, dependencies) in DependencyMap)
             {
-                if (!nodeMap.TryGetValue(classSymbol, out var classNode))
+                //find all nodes for the type
+                List<DependencyNode> dependantNodes = nodes.Where(x => comparer.Equals(x.ImplementationType, dependantSmybol)).ToList();
+
+                //interfaces wont have nodes
+                if (dependantNodes.Count == 0)
                     continue;
 
+                //for each dependency the class has, connect it to the nodes that represent those objects
                 foreach (var dependencySymbol in dependencies)
                 {
-                    if (!nodeMap.TryGetValue(dependencySymbol, out var dependencyNode))
-                        continue;
-
-                    // Wire the edge
-                    classNode.DependsOn.Add(dependencyNode);
-                    dependencyNode.DependedOnBy.Add(classNode);
-                }
-            }
-        }
-
-        private void WireInterfaceImplementations(
-            Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
-        {
-            foreach (var classSymbol in SolutionAnalyzer.AllTypes)
-            {
-                // Skip interfaces and non-source symbols
-                if (classSymbol.TypeKind != TypeKind.Class || !classSymbol.Locations.Any(loc => loc.IsInSource))
-                    continue;
-
-                if (!nodeMap.TryGetValue(classSymbol, out var classNode))
-                    continue;
-
-                foreach (var interfaceSymbol in classSymbol.AllInterfaces)
-                {
-                    if (!nodeMap.TryGetValue(interfaceSymbol, out var interfaceNode))
-                        continue;
-
-                    classNode.Implements.Add(interfaceNode);
-                    interfaceNode.ImplementedBy.Add(classNode);
-                }
-            }
-        }
-
-        private void ExpandInterfaceDownstreamEdges(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
-        {
-            foreach (var node in nodeMap.Values)
-            {
-                var seen = new HashSet<INamedTypeSymbol>(new FullyQualifiedNameComparer());
-                var expanded = new List<DependencyNode>();
-
-                foreach (var dependency in node.DependsOn)
-                {
-                    // Add the interface or class
-                    if (seen.Add(dependency.Class))
-                        expanded.Add(dependency);
-
-                    // If it's an interface, add its implementations directly after
-                    if (dependency.IsInterface)
+                    foreach (var dependantNode in dependantNodes)
                     {
-                        foreach (var impl in dependency.ImplementedBy)
-                        {
-                            if (seen.Add(impl.Class))
-                                expanded.Add(impl);
-                        }
+                        //link the raw dependencies (interfaces / literal classes asked for)
+                        dependantNode.RawDependencies = dependencies;
+
+                        //find all nodes that could satisfy the dependency
+                        var dependencyNodes = nodes
+                                        .Where(x => x.ProjectName == dependantNode.ProjectName &&
+                                                    x.SatisfiesDependency(dependencySymbol)
+                                        ).ToList();
+                            
+                        dependantNode.DependsOn.AddRange(dependencyNodes);
+                        dependencyNodes.ForEach(x => x.DependedOnBy.Add(dependantNode));
                     }
                 }
-
-                node.DependsOn = expanded;
             }
         }
 
-        private void ExpandInterfaceUpstreamEdges(Dictionary<INamedTypeSymbol, DependencyNode> nodeMap)
+        private sealed class RegInfoKeyComparer : IEqualityComparer<(INamedTypeSymbol? ImplementationType, INamedTypeSymbol? ServiceInterface, string projectName, LifetimeTypes lifetime)>
         {
-            foreach (var node in nodeMap.Values)
+            public bool Equals(
+                (INamedTypeSymbol? ImplementationType, INamedTypeSymbol? ServiceInterface, string projectName, LifetimeTypes lifetime) x,
+                (INamedTypeSymbol? ImplementationType, INamedTypeSymbol? ServiceInterface, string projectName, LifetimeTypes lifetime) y)
             {
-                foreach (var dependency in node.DependsOn)
+                var comparer = new FullyQualifiedNameComparer();
+                return comparer.Equals(x.ImplementationType, y.ImplementationType) &&
+                        comparer.Equals(x.ServiceInterface, y.ServiceInterface) &&
+                        x.lifetime == y.lifetime &&
+                        x.projectName == y.projectName;
+
+            }
+
+            public int GetHashCode((INamedTypeSymbol?, INamedTypeSymbol?, string, LifetimeTypes) obj)
+            {
+                unchecked
                 {
-                    if (dependency.IsInterface && dependency.ImplementedBy.Count > 0)
-                    {
-                        foreach (var implementation in dependency.ImplementedBy)
-                        {
-                            // Avoid duplicate edges
-                            if (!implementation.DependedOnBy.Contains(node))
-                                implementation.DependedOnBy.Add(node);
-                        }
-                    }
+                    var cmp = new FullyQualifiedNameComparer();
+                    var hash = 17;
+                    hash = hash * 31 + cmp.GetHashCode(obj.Item1);
+                    hash = hash * 31 + cmp.GetHashCode(obj.Item2);
+                    hash = hash * 31 + obj.Item3.GetHashCode();
+                    hash = hash * 31 + obj.Item4.GetHashCode();
+                    return hash;
                 }
             }
         }

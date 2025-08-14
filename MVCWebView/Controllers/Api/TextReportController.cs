@@ -2,7 +2,7 @@
 using DependencyAnalyzer.Visualizers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-
+/*
 namespace MVCWebView.Controllers.Api
 {
     [Route("api/[controller]")]
@@ -73,3 +73,4 @@ namespace MVCWebView.Controllers.Api
         }
     }
 }
+*/

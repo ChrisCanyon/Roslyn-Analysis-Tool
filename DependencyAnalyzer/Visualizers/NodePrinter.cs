@@ -1,6 +1,6 @@
 ﻿using Microsoft.CodeAnalysis;
 using System.Text;
-
+/*
 namespace DependencyAnalyzer.Visualizers
 {
     public class NodePrinter
@@ -25,7 +25,7 @@ namespace DependencyAnalyzer.Visualizers
             bool ambiguousRegistrationSubDependency = false)
         {
             string marker = prefix == "" ? "" : isLast ? "└─ " : "├─ ";
-            var cycle = path.Contains(node.Class, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
+            var cycle = path.Contains(node.ImplementationType, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
 
             if (!node.RegistrationInfo.TryGetValue(project, out var currentNodeRegistration))
             {
@@ -66,7 +66,7 @@ namespace DependencyAnalyzer.Visualizers
             if (!string.IsNullOrEmpty(cycle))
                 return;
 
-            path.Push(node.Class);
+            path.Push(node.ImplementationType);
 
             var deps = GetReleventInterfaceAndImplementations(node.DependsOn, project);
 
@@ -105,7 +105,7 @@ namespace DependencyAnalyzer.Visualizers
             }
 
             string marker = prefix == "" ? "" : isLast ? "╘═ " : "╞═ ";
-            var cycle = path.Contains(node.Class, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
+            var cycle = path.Contains(node.ImplementationType, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
             sb.Append($"{prefix}{marker}{node.ClassName}{cycle}", consoleColor);
             var lifestyleText = $" [{projectRegistration.Lifetime}]";
             sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.Lifetime));
@@ -113,7 +113,7 @@ namespace DependencyAnalyzer.Visualizers
             if (!string.IsNullOrEmpty(cycle))
                 return;
 
-            path.Push(node.Class);
+            path.Push(node.ImplementationType);
 
             var dependants = node.DependedOnBy.ToList();
             for (int i = 0; i < dependants.Count; i++)
@@ -187,3 +187,4 @@ namespace DependencyAnalyzer.Visualizers
         }
     }
 }
+*/

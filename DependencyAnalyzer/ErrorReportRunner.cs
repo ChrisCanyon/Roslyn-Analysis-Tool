@@ -1,8 +1,8 @@
 ﻿using DependencyAnalyzer.Parsers;
 using DependencyAnalyzer.Visualizers;
 using Microsoft.CodeAnalysis;
-using System.Text;
-using System.Xml.Linq;
+
+/*
 
 namespace DependencyAnalyzer
 {
@@ -61,13 +61,13 @@ namespace DependencyAnalyzer
         private void SearchForCycle(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
         {
             var comparer = new FullyQualifiedNameComparer();
-            if (path.Contains(node.Class, comparer))
+            if (path.Contains(node.ImplementationType, comparer))
             {
                 sb.Append($"Cycle Detected: ", ConsoleColor.White);
-                sb.Append($"{node.Class.Name} <- ", ConsoleColor.Red);
+                sb.Append($"{node.ImplementationType.Name} <- ", ConsoleColor.Red);
                 foreach (var step in path)
                 {
-                    if(comparer.Equals(node.Class, step))
+                    if(comparer.Equals(node.ImplementationType, step))
                     {
                         sb.Append($"{step.Name}", ConsoleColor.Red);
                         return;
@@ -83,7 +83,7 @@ namespace DependencyAnalyzer
             if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
 
             visitedNodes.Add(node);
-            path.Push(node.Class);
+            path.Push(node.ImplementationType);
 
             foreach (var dependency in node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project)))
             {
@@ -136,16 +136,15 @@ namespace DependencyAnalyzer
         public void SearchForExcessiveDependencies(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
         {
             var comparer = new FullyQualifiedNameComparer();
-            if (path.Contains(node.Class, comparer)) return;
+            if (path.Contains(node.ImplementationType, comparer)) return;
             if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
 
             visitedNodes.Add(node);
-            path.Push(node.Class);
+            path.Push(node.ImplementationType);
 
             var dependencies = node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project));
-            //Dont count IClassA and ClassA as 2 dependencies
-            var implmentationsOnly = dependencies.Where(x => !x.IsInterface);
-            if(implmentationsOnly.Count() > 5)//TODO determine threshold
+
+            if(dependencies.Count() > 5)//TODO determine threshold
             {
                 var mainText = $"[WARN] {node.ClassName} has {dependencies.Count()}";
                 if (dependencies.Any(dep => dep.RegistrationInfo[project].UnresolvableImplementation))
@@ -211,24 +210,24 @@ namespace DependencyAnalyzer
         private void SearchForManualLifecycle(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder resolveNotes, ColoredStringBuilder disposeNotes)
         {
             var comparer = new FullyQualifiedNameComparer();
-            if (path.Contains(node.Class, comparer)) return;
+            if (path.Contains(node.ImplementationType, comparer)) return;
             if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
 
             visitedNodes.Add(node);
-            path.Push(node.Class);
+            path.Push(node.ImplementationType);
 
             var nodeRegistration = node.RegistrationInfo[project];
 
             List<ManualLifetimeInteractionInfo> allResolvedSymbols = manualResolutionParser.ManuallyResolvedSymbols;
             foreach(var resolvedSymbol in allResolvedSymbols.Where(x => x.Project == project && 
-                                            comparer.Equals(node.Class, x.Type)))
+                                            comparer.Equals(node.ImplementationType, x.Type)))
             {
                 resolveNotes.AppendLine($"{node.ClassName} manual resolutions", ConsoleColor.Yellow);
                 resolveNotes.AppendLine($"\t{resolvedSymbol.InvocationPath}", ConsoleColor.White);
             }
 
             var disposals = manualResolutionParser.ManuallyDisposedSymbols
-                .Where(x => comparer.Equals(node.Class, x.Type) && project == x.Project).ToList();
+                .Where(x => comparer.Equals(node.ImplementationType, x.Type) && project == x.Project).ToList();
             foreach (var disposedSymbol in disposals)
             {
                 disposeNotes.AppendLine($"[{nodeRegistration.Lifetime}]{node.ClassName} manual Disposal/Release:", ConsoleColor.Yellow);
@@ -268,12 +267,12 @@ namespace DependencyAnalyzer
         private bool FindSensitiveNodesInDependencyTree(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
         {
             var comparer = new FullyQualifiedNameComparer();
-            if (path.Contains(node.Class, comparer)) return false;
+            if (path.Contains(node.ImplementationType, comparer)) return false;
             if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return false;
             if (node.RegistrationInfo[project].Lifetime == LifetimeTypes.Singleton) return false; //doesnt actually release
             
             visitedNodes.Add(node);
-            path.Push(node.Class);
+            path.Push(node.ImplementationType);
 
             bool ret = false;
 
@@ -452,3 +451,4 @@ namespace DependencyAnalyzer
         }
     }
 }
+*/

@@ -15,8 +15,8 @@ namespace MVCWebView.Controllers
 
         public IActionResult Index()
         {
-            var allProjects = _graph.Nodes.SelectMany(x => x.RegistrationInfo)
-                                            .Select(x => x.Key).Distinct().ToList();
+            var allProjects = _graph.Nodes.SelectMany(x => x.ProjectName)
+                                            .Distinct().ToList();
 
             ViewData["ProjectList"] = allProjects;
 
