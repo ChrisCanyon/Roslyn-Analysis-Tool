@@ -80,5 +80,25 @@ namespace DependencyAnalyzer
 
             return false;
         }
+
+        private List<INamedTypeSymbol>? _unsatisfiedDependencies = null; 
+        
+        public List<INamedTypeSymbol> UnsatisfiedDependencies()
+        {
+            if (_unsatisfiedDependencies != null) return _unsatisfiedDependencies;
+
+            var ret = new List<INamedTypeSymbol>();
+
+            foreach (var dependency in RawDependencies)
+            {
+                if(!DependsOn.Any(x => x.SatisfiesDependency(dependency)))
+                {
+                    ret.Add(dependency);
+                }
+            }
+
+            _unsatisfiedDependencies = ret;
+            return ret;
+        }
     }
 }

@@ -122,17 +122,7 @@ namespace DependencyAnalyzer
 
             var allRegistrations = SolutionAnalyzer.GetRegistrationsForSymbol(symbol);
             if (allRegistrations.Count == 0)
-            {
-                nodes.Add(new DependencyNode
-                {
-                    ImplementationType = symbol,
-                    ServiceInterface = null,
-                    ProjectName = symbol.ContainingAssembly.Name,
-                    ClassName = symbol.ToDisplayString(),// Fully qualified type name
-                    Lifetime = LifetimeTypes.Unregistered
-                });
                 return nodes;
-            }
 
             // Group registrations by (implementation type, service interface).
             // A single class can implement and be registered as multiple different services,
@@ -150,10 +140,10 @@ namespace DependencyAnalyzer
                 {
                     Console.WriteLine("Registration for same service/impl/project/lifestyle");
                     regiGroup.ToList().ForEach(x => 
-                        Console.WriteLine($"Implementation {x.ImplementationType?.ToDisplayString()} " +
-                        $"Interface {x.ServiceInterface?.ToDisplayString()} " +
-                        $"Project {x.ProjectName} " +
-                        $"Lifetime {x.Lifetime}"));
+                        Console.WriteLine($"Implementation: {x.ImplementationType?.ToDisplayString()}, " +
+                        $"Interface: {x.ServiceInterface?.ToDisplayString()}, " +
+                        $"Project: {x.ProjectName}, " +
+                        $"Lifetime: {x.Lifetime}"));
                 }
                 var reg = regiGroup.First();
 

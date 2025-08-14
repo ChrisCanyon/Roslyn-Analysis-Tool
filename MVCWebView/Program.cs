@@ -1,5 +1,6 @@
 using DependencyAnalyzer;
 using DependencyAnalyzer.Parsers;
+using DependencyAnalyzer.Visualizers;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis.MSBuild;
 using System.Diagnostics;
@@ -13,7 +14,7 @@ builder.Services.AddControllersWithViews()
 MSBuildLocator.RegisterDefaults();
 using var workspace = MSBuildWorkspace.Create();
 
-string solutionPath = "C:PathToSolution.sln";
+string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\InSite.sln";
 
 //Generate full dependency graph for project and register as single to cache it
 var stopwatch = Stopwatch.StartNew();
@@ -42,6 +43,11 @@ stopwatch.Stop();
 Console.WriteLine($"~~~ graph build ~~~");
 Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
 
+var billRefreshNodes = graph.Nodes.Where(x => x.ClassName == "Core.InSite.ECommerce.Bills.BillRefresher").First();
+var TPHandlerResolverMVC = graph.Nodes.Where(x => x.ClassName == "InSite.Bll.TylerPayments.Resolvers.TylerPaymentsHandlerResolver").First();
+var BuildingProjectsHandlerNodes = graph.Nodes.Where(x => x.ClassName == "InSite.Bll.TylerPayments.Handlers.BuildingProjectsHandler");
+
+GraphvizConverter.CreateFullGraphvizForProject(graph, "InSiteMVC", false);
 
 builder.Services.AddSingleton(solutionAnalyzer);
 builder.Services.AddSingleton(dependencyAnalyzer);
