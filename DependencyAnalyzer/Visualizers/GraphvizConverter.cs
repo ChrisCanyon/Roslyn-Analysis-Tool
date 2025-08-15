@@ -1,9 +1,7 @@
 ﻿using DependencyAnalyzer.Comparers;
 using DependencyAnalyzer.Models;
-using Microsoft.Build.Evaluation;
 using Microsoft.CodeAnalysis;
 using System.Diagnostics;
-using System.Reflection.Emit;
 using System.Text;
 
 namespace DependencyAnalyzer.Visualizers
@@ -79,6 +77,7 @@ namespace DependencyAnalyzer.Visualizers
 
             return svgPath;
         }
+
         private static string getBasePath(bool forWeb)
         {
             var basePath = "";
@@ -150,7 +149,7 @@ namespace DependencyAnalyzer.Visualizers
             visitedNodes.Add(currentNode);
             path.Push(currentNode.ImplementationType);
 
-            CreateNode(sb, currentNode.ClassName, currentNode.Lifetime);
+            CreateNode(sb, currentNode);
 
             foreach (var dependant in currentNode.DependedOnBy)
             {
@@ -169,7 +168,7 @@ namespace DependencyAnalyzer.Visualizers
                     label = "[label=\"Valid\", color=green, fontcolor=green]";
                 }
 
-                CreateEdge(sb, dependant.ClassName, currentNode.ClassName, label);
+                CreateEdge(sb, dependant, currentNode, label);
             }
 
             path.Pop();
@@ -180,9 +179,8 @@ namespace DependencyAnalyzer.Visualizers
             foreach (var dependency in node.UnsatisfiedDependencies())
             {
                 var color = GetBackgroundColorForLifetime(LifetimeTypes.Unregistered);
-                CreateNode(sb, dependency.ToDisplayString(), LifetimeTypes.Unregistered);
-                string label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
-                CreateEdge(sb, node.ClassName, dependency.ToDisplayString(), label);
+                CreateUnregisteredNode(sb, dependency);
+                CreateUnregisteredEdge(sb, node, dependency);
             }
         }
 
@@ -224,7 +222,7 @@ namespace DependencyAnalyzer.Visualizers
         private static void ProcessSingleNode(DependencyNode currentMode, StringBuilder sb)
         {
             //Create node for self
-            CreateNode(sb, currentMode.ClassName, currentMode.Lifetime);
+            CreateNode(sb, currentMode);
 
             foreach (var dependency in currentMode.DependsOn)
             {
@@ -240,7 +238,7 @@ namespace DependencyAnalyzer.Visualizers
                 }
 
                 //only create edge. the node will be created in subsequent calls to this method
-                CreateEdge(sb, currentMode.ClassName, dependency.ClassName, label);
+                CreateEdge(sb, currentMode, dependency, label);
             }
 
             AddUnsatisfiedDependencies(currentMode, sb);
@@ -296,7 +294,7 @@ namespace DependencyAnalyzer.Visualizers
             visitedNodes.Add(currentNode);
             path.Push(currentNode.ImplementationType);
 
-            CreateNode(sb, currentNode.ClassName, currentNode.Lifetime);
+            CreateNode(sb, currentNode);
 
             foreach (var dependency in currentNode.DependsOn)
             {
@@ -312,7 +310,7 @@ namespace DependencyAnalyzer.Visualizers
                     label = "[label=\"Valid\", color=green, fontcolor=green]";
                 }
 
-                CreateEdge(sb, currentNode.ClassName, dependency.ClassName, label);
+                CreateEdge(sb, currentNode, dependency, label);
             }
 
             AddUnsatisfiedDependencies(currentNode, sb);
@@ -334,18 +332,67 @@ namespace DependencyAnalyzer.Visualizers
             sb.AppendLine($"</TABLE>\r\n>, shape=plaintext];");
         }
 
-        private static void CreateNode(StringBuilder sb, string className, LifetimeTypes lifetime)
+        private static void CreateUnregisteredNode(StringBuilder sb, INamedTypeSymbol symbol)
         {
-            sb.AppendLine($"\"{className}\" " +
-                        $"[label=\"{className}\\n({lifetime})\"," +
+            string nodeId = symbol.ToDisplayString();
+            string nodeLabel = symbol.Name;
+            LifetimeTypes lifetime = LifetimeTypes.Unregistered;
+
+            sb.AppendLine($"\"{nodeId}\" " +
+                        $"[label=\"{nodeLabel}\"," +
                         $" color={GetBackgroundColorForLifetime(lifetime)}," +
                         $" fontcolor={GetTextColorForLifetime(lifetime)}," +
                         $" style=filled];");
         }
 
-        private static void CreateEdge(StringBuilder sb, string to, string from, string label)
+        private static void CreateUnregisteredEdge(StringBuilder sb, DependencyNode from, INamedTypeSymbol to)
         {
-            sb.AppendLine($"\"{to}\" -> \"{from}\" {label}");
+            var color = GetBackgroundColorForLifetime(LifetimeTypes.Unregistered);
+            string label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
+
+            sb.AppendLine($"\"{GetIdFromNode(from)}\" -> \"{to.ToDisplayString()}\" {label}");
+        }
+
+
+        private static void CreateNode(StringBuilder sb, DependencyNode node)
+        {
+            string nodeId = GetIdFromNode(node);
+            string nodeLabel = node.ClassName;
+            LifetimeTypes lifetime = node.Lifetime;
+
+            if (node.ServiceInterface != null)
+            {
+                nodeLabel = $"{node.ImplementationType.Name} : {node.ServiceInterface.Name}\n{lifetime}";
+            }
+            else
+            {
+                nodeLabel = $"{node.ImplementationType.Name}\n{lifetime}";
+            }
+
+            sb.AppendLine($"\"{nodeId}\"" +
+                        $"[label=\"{nodeLabel}\"," +
+                        $" color={GetBackgroundColorForLifetime(lifetime)}," +
+                        $" fontcolor={GetTextColorForLifetime(lifetime)}," +
+                        $" style=filled];");
+        }
+
+        private static string GetIdFromNode(DependencyNode node)
+        {
+            string nodeId = "";
+            if (node.ServiceInterface != null)
+            {
+                nodeId = $"{node.ImplementationType.ToDisplayString()} : {node.ServiceInterface.ToDisplayString()}";
+            }
+            else
+            {
+                nodeId = $"{node.ImplementationType.ToDisplayString()}";
+            }
+            return nodeId;
+        }
+
+        private static void CreateEdge(StringBuilder sb, DependencyNode from, DependencyNode to, string label)
+        {
+            sb.AppendLine($"\"{GetIdFromNode(from)}\" -> \"{GetIdFromNode(to)}\" {label}");
         }
 
         private static string GetBackgroundColorForLifetime(LifetimeTypes lifetime)

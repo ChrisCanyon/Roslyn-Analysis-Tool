@@ -20,7 +20,7 @@ namespace DependencyAnalyzer.Parsers
         {
             var classSymbols = SolutionAnalyzer.AllTypes;
 
-            var comparer = SymbolEqualityComparer.Default;
+            var comparer = new FullyQualifiedNameComparer();
             var dependencyMap = new Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>>(comparer);
 
             foreach (var classSymbol in classSymbols)
@@ -29,6 +29,8 @@ namespace DependencyAnalyzer.Parsers
 
                 dependencies.AddRange(GetDependenciesFromConstructors(classSymbol.Constructors));
                 dependencies.AddRange(GetManualResolvedDependenciesForClass(classSymbol));
+
+                dependencies = dependencies.Distinct(comparer).ToList();
 
                 dependencyMap[classSymbol] = dependencies;
             }

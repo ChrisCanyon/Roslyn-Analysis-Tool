@@ -9,13 +9,13 @@
 } 
 
 document.addEventListener("DOMContentLoaded", () => {
-    const input = document.getElementById("classInput");
+    /*const input = document.getElementById("classInput");
     console.log("adding listener");
     input.addEventListener("input", (event) => {
         el = event.target;
         const length = Math.max(el.value.length, 25);
         el.style.setProperty("width", `${length}ch`, "important");
-    });
+    });*/
 });
 
 async function loadPrevious() {
@@ -141,10 +141,13 @@ async function fetchTextReport(endpoint, outputId){
 
 async function loadSingleClassSvg() {
     showLoading();
-    const className = document.getElementById('classInput').value;
+    const rawClassName = document.getElementById('classInput').value;
+    const parts = rawClassName.split(":").map(s => s.trim());
+    const className = parts[0] || "";
+    const interface = parts[1] || "";
     const project = document.getElementById('projectInput').value;
 
-    const response = await fetch(`/api/SVG/GetSvg?className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}`);
+    const response = await fetch(`/api/SVG/GetSvg?implementationName=${encodeURIComponent(className)}&interfaceName=${encodeURIComponent(interface)}&project=${encodeURIComponent(project)}`);
     if (response.ok) {
         historyStack.push(createViewContext(ViewType.SINGLE_CLASS, project, className))
         const svg = await response.text();
