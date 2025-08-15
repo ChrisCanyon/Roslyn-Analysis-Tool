@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using DependencyAnalyzer.Comparers;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
@@ -121,7 +122,7 @@ namespace DependencyAnalyzer.Parsers
                             callPath
                             );
 
-                        ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, [invocationRoot], solution));
+                        ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, [invocationRoot], model, solution));
                     }
                     else
                     {
@@ -134,7 +135,7 @@ namespace DependencyAnalyzer.Parsers
                             Console.WriteLine($"Unable to determine root invocation of {disposeCallContainingMethod.ToDisplayString()}:{disposeInvocation.ToFullString()}", ConsoleColor.Cyan);
                         }
 
-                        ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, rootInvocations, solution));
+                        ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, rootInvocations, model, solution));
                     }
                 }
             }
@@ -142,11 +143,20 @@ namespace DependencyAnalyzer.Parsers
             return ret;
         }
 
-        private async Task<List<ManualLifetimeInteractionInfo>> GenerateDisposalInfos(INamedTypeSymbol disposedClass, InvocationExpressionSyntax disposeInvocation, List<InvocationChainFromRoot> rootInvocations, Solution solution)
+        private async Task<List<ManualLifetimeInteractionInfo>> GenerateDisposalInfos(INamedTypeSymbol disposedClass, InvocationExpressionSyntax disposeInvocation, List<InvocationChainFromRoot> rootInvocations, SemanticModel model, Solution solution)
         {
             var ret = new List<ManualLifetimeInteractionInfo>();
 
-            foreach(var rootInvocation in rootInvocations)
+            var typeDecl = disposeInvocation.FirstAncestorOrSelf<TypeDeclarationSyntax>();
+            var containingType = typeDecl != null
+                ? model.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol
+                : null;
+            if (containingType == null)
+            {
+                Console.WriteLine($"Could not find containing class for {disposeInvocation.ToFullString()}");
+            }
+
+            foreach (var rootInvocation in rootInvocations)
             {
                 //if root is windosr installer expand results for each place it is installed
                 if (ImplementsInterface(rootInvocation.RootClass, "Castle.MicroKernel.Registration.IWindsorInstaller"))
@@ -154,20 +164,24 @@ namespace DependencyAnalyzer.Parsers
                     var projects = await FindInstallerReferencesAsync(solution, rootInvocation.RootClass);
                     foreach (var project in projects)
                     {
-                        ret.Add(new ManualLifetimeInteractionInfo(disposedClass,
-                        disposeInvocation.ToFullString(),
-                        project,
-                        rootInvocation.InvocationPath,
-                        ManualLifetimeInteractionKind.Dispose
+                        ret.Add(new ManualLifetimeInteractionInfo(
+                            disposedClass,
+                            containingType,
+                            disposeInvocation.ToFullString(),
+                            project,
+                            rootInvocation.InvocationPath,
+                            ManualLifetimeInteractionKind.Dispose
                         ));
                     }
                 }
-                ret.Add(new ManualLifetimeInteractionInfo(disposedClass,
+                ret.Add(new ManualLifetimeInteractionInfo(
+                    disposedClass,
+                    containingType,
                     disposeInvocation.ToFullString(),
                     rootInvocation.Project,
                     rootInvocation.InvocationPath,
                     ManualLifetimeInteractionKind.Dispose
-                    ));
+                ));
             }
 
             return ret;
@@ -352,7 +366,7 @@ namespace DependencyAnalyzer.Parsers
                         var model = await document.GetSemanticModelAsync();
                         if (model == null) continue;
 
-                        if (IsIgnoredClassType(invocation, model)) continue;
+                        //if (IsIgnoredClassType(invocation, model)) continue;
 
                         ret.AddRange(GetResolutionInfoFromInvocations(new[] { invocation }, model, document.Project.Name, document.Name));
                     }
@@ -363,7 +377,6 @@ namespace DependencyAnalyzer.Parsers
 
         private static bool IsIgnoredClassType(InvocationExpressionSyntax invocation, SemanticModel model)
         {
-          //  return false;
             var classDeclaration = invocation.Ancestors()
                 .OfType<ClassDeclarationSyntax>()
                 .FirstOrDefault();
@@ -373,9 +386,6 @@ namespace DependencyAnalyzer.Parsers
                 var classSymbol = model.GetDeclaredSymbol(classDeclaration) as INamedTypeSymbol;
                 var ignoredNameFragments = new []
                 {
-    //                "Build",
-      //              "Factory",
-                    "Resolver",
                     "Test",
                 };
 
@@ -390,10 +400,20 @@ namespace DependencyAnalyzer.Parsers
             var ret = new List<ManualLifetimeInteractionInfo>();
             foreach (var invocation in invocations)
             {
+                var typeDecl = invocation.FirstAncestorOrSelf<TypeDeclarationSyntax>();
+                var containingType = typeDecl != null
+                    ? model.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol
+                    : null;
+                if (containingType == null)
+                {
+                    Console.WriteLine($"Could not find containing class for {invocation.ToFullString()}");
+                }
+
                 foreach (var resolvedType in GetTypeArgumentsFromInvocation(invocation, model))
                 {
                     ret.Add(new ManualLifetimeInteractionInfo(
                         resolvedType,
+                        containingType,
                         project,
                         file,
                         invocation.ToFullString().Trim(),
@@ -404,6 +424,7 @@ namespace DependencyAnalyzer.Parsers
                 {
                     ret.Add(new ManualLifetimeInteractionInfo(
                         resolvedType,
+                        containingType,
                         project,
                         file,
                         invocation.ToFullString().Trim(),

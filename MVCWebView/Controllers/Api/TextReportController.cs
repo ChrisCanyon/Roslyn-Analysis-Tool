@@ -1,7 +1,9 @@
 ﻿using DependencyAnalyzer;
+using DependencyAnalyzer.Models;
 using DependencyAnalyzer.Visualizers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System.Xml.Linq;
 
 namespace MVCWebView.Controllers.Api
 {
@@ -26,7 +28,8 @@ namespace MVCWebView.Controllers.Api
             [FromQuery] string project,
             [FromQuery] bool entireProject,
             [FromQuery] bool allControllers,
-            [FromQuery] string className = "")
+            [FromQuery] string implementationName = "",
+            [FromQuery] string interfaceName = "")
         {
             if (string.IsNullOrWhiteSpace(type))
                 return BadRequest("Report type is required.");
@@ -34,35 +37,53 @@ namespace MVCWebView.Controllers.Api
             if (string.IsNullOrWhiteSpace(project))
                 return BadRequest("Project is required.");
 
+            DependencyNode? node = null;
             if (!entireProject && !allControllers)
             {
-                if(className == string.Empty)
+                if(implementationName == string.Empty)
                 {
                     return BadRequest("Class name is required for single node reports");
                 }
 
-                var node = _graph.Nodes.Where(x =>
-                        string.Compare(x.ClassName, className, true) == 0).FirstOrDefault();
-                if (node == null)
+                IEnumerable<DependencyNode> classNodes = _graph.Nodes.Where(x =>
+                        string.Compare(x.ClassName, implementationName, true) == 0);
+                if (classNodes.Count() == 0)
                 {
-                    return NotFound($"Class with name {className} not found");
-                }
-                if (!node.RegistrationInfo.TryGetValue(project, out var projectReg))
-                {
-                    return NotFound($"{className} not registered in {project}");
+                    return NotFound($"Class with name {implementationName} not found");
                 }
 
-                className = _graph.Nodes.Where(x => string.Equals(x.ClassName, className, StringComparison.OrdinalIgnoreCase)).First().ClassName;
+                IEnumerable<DependencyNode> currentProjectNodes = classNodes.Where(x => x.ProjectName == project);
+                if (currentProjectNodes.Count() == 0)
+                {
+                    return NotFound($"{implementationName} not registered in {project}");
+                }
+
+                if (interfaceName == string.Empty)
+                {
+                    //Pure concrete impl
+                    node = currentProjectNodes.First();
+                }
+                else
+                {
+                    node = currentProjectNodes.Where(x => x.ServiceInterface != null &&
+                                string.Compare(x.ServiceInterface.ToDisplayString(), interfaceName, true) == 0)
+                            .FirstOrDefault();
+
+                    if (node == null)
+                    {
+                        return NotFound($"No registration for {implementationName} implementing {interfaceName} in {project}");
+                    }
+                }
             }
 
             ColoredStringBuilder? result = type switch
             {
-                "Tree" => _runner.GenerateTreeReport(className, project, entireProject, allControllers),
-                "Cycles" => _runner.GenerateCycleReport(className, project, entireProject, allControllers),
-                "ExcessiveDependencies" => _runner.GenerateExcessiveDependencies(className, project, entireProject, allControllers),
-                "ManualLifecycleManagement" => _runner.GenerateManualLifecycleManagementReport(className, project, entireProject, allControllers),
-                "UnusedMethods" => _runner.GenerateUnusedMethodsReport(className, project, entireProject, allControllers),
-                "ManualInstantiation" => _runner.GenerateManualInstantiationReport(className, project, entireProject, allControllers),
+                "Tree" => _runner.GenerateTreeReport(node, project, entireProject, allControllers),
+                //"Cycles" => _runner.GenerateCycleReport(node, project, entireProject, allControllers),
+                //"ExcessiveDependencies" => _runner.GenerateExcessiveDependencies(node, project, entireProject, allControllers),
+                "ManualLifecycleManagement" => _runner.GenerateManualLifecycleManagementReport(node, project, entireProject, allControllers),
+                "UnusedMethods" => _runner.GenerateUnusedMethodsReport(node, project, entireProject, allControllers),
+                "ManualInstantiation" => _runner.GenerateManualInstantiationReport(node, project, entireProject, allControllers),
                 _ => null
             };
 

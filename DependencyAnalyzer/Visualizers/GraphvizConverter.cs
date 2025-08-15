@@ -1,4 +1,6 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using DependencyAnalyzer.Comparers;
+using DependencyAnalyzer.Models;
+using Microsoft.CodeAnalysis;
 using System.Diagnostics;
 using System.Text;
 
@@ -20,7 +22,6 @@ namespace DependencyAnalyzer.Visualizers
             return svgPath;
         }
 
-
         public static string CreateFullGraphvizForProject(DependencyGraph graph, string project, bool forWeb)
         {
             var basePath = getBasePath(forWeb);
@@ -35,14 +36,14 @@ namespace DependencyAnalyzer.Visualizers
             return svgPath;
         }
 
-        public static string CreateConsumerGraphvizForProject(DependencyNode startNode, string project, bool forWeb)
+        public static string CreateConsumerGraphvizForProject(DependencyNode startNode, bool forWeb)
         {
             var basePath = getBasePath(forWeb);
 
-            var dotPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Consumer.dot");
-            var svgPath = Path.Combine(basePath, $"{startNode.ClassName}-{project}-Consumer.svg");
+            var dotPath = Path.Combine(basePath, $"{startNode.ClassName}-{startNode.ProjectName}-Consumer.dot");
+            var svgPath = Path.Combine(basePath, $"{startNode.ClassName}-{startNode.ProjectName}-Consumer.svg");
 
-            File.WriteAllText(dotPath, GetConsumerGraphvizString(startNode, project));
+            File.WriteAllText(dotPath, GetConsumerGraphvizString(startNode));
 
             GenerateSvg(dotPath, svgPath);
 
@@ -76,6 +77,7 @@ namespace DependencyAnalyzer.Visualizers
 
             return svgPath;
         }
+
         private static string getBasePath(bool forWeb)
         {
             var basePath = "";
@@ -119,49 +121,45 @@ namespace DependencyAnalyzer.Visualizers
             }
         }
 
-
-
-        private static string GetConsumerGraphvizString(DependencyNode startNode, string project)
+        private static string GetConsumerGraphvizString(DependencyNode startNode)
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph Dependencies {");
-            sb.AppendLine("\t rankdir=RL;");
-            CreateGraphvizLegend(sb);
+            GenerateBoilerPlateHeader(sb, "RL");
             var currentPath = new Stack<INamedTypeSymbol>();
             var visited = new List<DependencyNode>();
-            TraverseConsumerGraph(startNode, project, currentPath, visited, sb);
+            TraverseConsumerGraph(startNode, currentPath, visited, sb);
 
             sb.AppendLine("}");
             return sb.ToString();
         }
 
-        private static void TraverseConsumerGraph(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb)
+        private static void TraverseConsumerGraph(DependencyNode currentNode, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb)
         {
-            if (!node.RegistrationInfo.TryGetValue(project, out var currentNodeLifetime)) return;
-            if (path.Contains(node.Class, new FullyQualifiedNameComparer()))
+            if (path.Contains(currentNode.ImplementationType, new FullyQualifiedNameComparer()))
             {
                 Console.WriteLine($"Cycle detected:\n\t" +
-                    $"{String.Join(" ->", path.Select(x => x.Name))} -> {node.Class.Name}");
+                    $"{String.Join(" ->", path.Select(x => x.Name))} -> {currentNode.ImplementationType.Name}");
                 return;
             }
-            if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
 
-            visitedNodes.Add(node);
-            path.Push(node.Class);
+            if (visitedNodes.Any(x => x.ClassName == currentNode.ClassName && 
+                    x.ServiceInterface?.ToDisplayString() == currentNode.ServiceInterface?.ToDisplayString())) return;
 
-            CreateNode(sb, node.ClassName, currentNodeLifetime.Lifetime);
+            visitedNodes.Add(currentNode);
+            path.Push(currentNode.ImplementationType);
 
-            foreach (var dependant in node.DependedOnBy)
+            CreateNode(sb, currentNode);
+
+            foreach (var dependant in currentNode.DependedOnBy)
             {
-                TraverseConsumerGraph(dependant, project, path, visitedNodes, sb);
+                TraverseConsumerGraph(dependant, path, visitedNodes, sb);
             }
 
-            foreach (var dependant in node.DependedOnBy)
+            foreach (var dependant in currentNode.DependedOnBy)
             {
-                if (!dependant.RegistrationInfo.TryGetValue(project, out var dependantReg)) continue;
                 string label = "";
-                if (dependantReg.Lifetime > currentNodeLifetime.Lifetime)
+                if (dependant.Lifetime > currentNode.Lifetime)
                 {
                     label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
                 }
@@ -170,24 +168,40 @@ namespace DependencyAnalyzer.Visualizers
                     label = "[label=\"Valid\", color=green, fontcolor=green]";
                 }
 
-                CreateEdge(sb, dependant.ClassName, node.ClassName, label);
+                CreateEdge(sb, dependant, currentNode, label);
             }
 
             path.Pop();
+        }
+
+        private static void AddUnsatisfiedDependencies(DependencyNode node, StringBuilder sb)
+        {
+            foreach (var dependency in node.UnsatisfiedDependencies())
+            {
+                var color = GetBackgroundColorForLifetime(LifetimeTypes.Unregistered);
+                CreateUnregisteredNode(sb, dependency);
+                CreateUnregisteredEdge(sb, node, dependency);
+            }
+        }
+
+        private static void GenerateBoilerPlateHeader(StringBuilder sb, string rankdir = "LR")
+        {
+            sb.AppendLine("digraph Dependencies {");
+            sb.AppendLine($"\t rankdir={rankdir};");
+            sb.AppendLine("\t node [shape=ellipse, style=\"filled,dashed\", color=lightgray, fontcolor=black];");
+            CreateGraphvizLegend(sb);
         }
 
         private static string GetNodeGraphvizString(DependencyNode startNode, string project)
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph Dependencies {");
-            sb.AppendLine("\t rankdir=LR;");
-            CreateGraphvizLegend(sb);
+            GenerateBoilerPlateHeader(sb);
             var currentPath = new Stack<INamedTypeSymbol>();
             var visited = new List<DependencyNode>();
-            TraverseConsumerGraph(startNode, project, currentPath, visited, sb);
+            TraverseConsumerGraph(startNode, currentPath, visited, sb);
             visited = new List<DependencyNode>();
-            TraverseDependencyGraph(startNode, project, currentPath, visited, sb);
+            TraverseDependencyGraph(startNode, currentPath, visited, sb);
 
             sb.AppendLine("}");
             return sb.ToString();
@@ -197,13 +211,11 @@ namespace DependencyAnalyzer.Visualizers
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph Dependencies {");
-            sb.AppendLine("\t rankdir=LR;");
-            CreateGraphvizLegend(sb);
-            var projectNodes = graph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+            GenerateBoilerPlateHeader(sb);
+            var projectNodes = graph.Nodes.Where(x => x.ProjectName == project);
             foreach (var node in projectNodes)
             {
-                ProcessSingleNode(node, project, sb);
+                ProcessSingleNode(node, sb);
             }
 
             sb.AppendLine("}");
@@ -211,38 +223,16 @@ namespace DependencyAnalyzer.Visualizers
         }
 
         //this is called for every node in a project
-        private static void ProcessSingleNode(DependencyNode node, string project, StringBuilder sb)
+        private static void ProcessSingleNode(DependencyNode currentMode, StringBuilder sb)
         {
-            var dependencies = GetReleventInterfaceAndImplementations(node.DependsOn, project);
-            var registration = node.RegistrationInfo[project];
-
             //Create node for self
-            CreateNode(sb, node.ClassName, registration.Lifetime);
+            CreateNode(sb, currentMode);
 
-            foreach (var dependency in dependencies)
+            foreach (var dependency in currentMode.DependsOn)
             {
                 string label;
-                if (!dependency.RegistrationInfo.TryGetValue(project, out var dependencyReg))
-                {
-                    //Dependency was not registered for project. this is a runtime error probably
-                    if (registration.IsFactoryResolved)
-                    {
-                        var color = "\"#808080\"";
-                        CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
-                        label = $"[label=\"WARNING NOT REGISTERED\\nFactory\", color={color}, fontcolor={color}]";
-                        CreateEdge(sb, node.ClassName, dependency.ClassName, label);
-                    }
-                    else
-                    {
-                        var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
-                        CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
-                        label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
-                        CreateEdge(sb, node.ClassName, dependency.ClassName, label);
-                    }
-                    continue;
-                }
 
-                if (dependencyReg.Lifetime < registration.Lifetime)
+                if (dependency.Lifetime < currentMode.Lifetime)
                 {
                     label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
                 }
@@ -252,21 +242,20 @@ namespace DependencyAnalyzer.Visualizers
                 }
 
                 //only create edge. the node will be created in subsequent calls to this method
-                CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                CreateEdge(sb, currentMode, dependency, label);
             }
-        }
 
+            AddUnsatisfiedDependencies(currentMode, sb);
+        }
+        
         private static string GetDependencyGraphvizString(DependencyNode startNode, string project)
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph Dependencies {");
-            sb.AppendLine("\t rankdir=LR;");
-            CreateGraphvizLegend(sb);
+            GenerateBoilerPlateHeader(sb);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
             var visited = new List<DependencyNode>();
-            TraverseDependencyGraph(startNode, project, currentPath, visited, sb);
+            TraverseDependencyGraph(startNode, currentPath, visited, sb);
 
             sb.AppendLine("}");
             return sb.ToString();
@@ -277,120 +266,43 @@ namespace DependencyAnalyzer.Visualizers
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph controllers {");
-            sb.AppendLine("\t rankdir=LR;");
-            CreateGraphvizLegend(sb);
+            GenerateBoilerPlateHeader(sb);
             var controllersInProject = graph.Nodes.Where(
-                node => node.RegistrationInfo.Any(reg => reg.Key == project && reg.Value.Lifetime == LifetimeTypes.Controller));
+                node => node.ProjectName == project && node.Lifetime == LifetimeTypes.Controller);
 
             var visited = new List<DependencyNode>();
             foreach (var node in controllersInProject)
             {
                 var currentPath = new Stack<INamedTypeSymbol>();
-                TraverseDependencyGraph(node, project, currentPath, visited, sb);
+                TraverseDependencyGraph(node, currentPath, visited, sb);
             }
 
             sb.AppendLine("}");
             return sb.ToString();
         }
 
-        private static void CreateNode(StringBuilder sb, string className, LifetimeTypes lifetime)
+        private static void TraverseDependencyGraph(DependencyNode currentNode, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb)
         {
-            sb.AppendLine($"\"{className}\" " +
-                        $"[label=\"{className}\\n({lifetime})\"," +
-                        $" color={GetBackgroundColorForLifetime(lifetime)}," +
-                        $" fontcolor={GetTextColorForLifetime(lifetime)}," +
-                        $" style=filled];");
-        }
-
-        private static void CreateEdge(StringBuilder sb, string to, string from, string label)
-        {
-            sb.AppendLine($"\"{to}\" -> \"{from}\" {label}");
-        }
-
-        //TODO MAKE THIS COMMON WITH NODE PRINTER
-        private static List<DependencyNode> GetReleventInterfaceAndImplementations(IEnumerable<DependencyNode> dependencies, string project)
-        {
-            var depInterfaces = dependencies.Where(x => x.IsInterface).ToList();
-            var relevantImplementations = dependencies.Where(dependency =>
-            {
-                //if this is an implementation for a needed interface that is registered in the project
-                if (dependency.RegistrationInfo.ContainsKey(project)
-                && dependency.Implements.Any(inter => depInterfaces.Contains(inter)))
-                {
-                    return true;
-                }
-                //Or if this is a dependency that isnt an interface implementation
-                if (dependency.Implements.Count == 0 && dependency.IsInterface == false)
-                {
-                    return true;
-                }
-                return false;
-            });
-
-            return depInterfaces.Concat(relevantImplementations).ToList();
-        }
-
-        private static void TraverseDependencyGraph(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, StringBuilder sb, bool ambiguousRegistrationSubDependency = false)
-        {
-            if (path.Contains(node.Class, new FullyQualifiedNameComparer()))
+            if (path.Contains(currentNode.ImplementationType, new FullyQualifiedNameComparer()))
             {
                 Console.WriteLine($"Cycle detected:\n\t" +
-                    $"{String.Join(" -> ", path.Select(x => x.Name))} -> {node.Class.Name}");
+                    $"{String.Join(" -> ", path.Select(x => x.Name))} -> {currentNode.ImplementationType.Name}");
                 return;
             }
-            if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
+            if (visitedNodes.Any(x => x.ClassName == currentNode.ClassName &&
+                                x.ServiceInterface?.ToDisplayString() == currentNode.ServiceInterface?.ToDisplayString())) return;
 
-            visitedNodes.Add(node);
-            path.Push(node.Class);
+            visitedNodes.Add(currentNode);
+            path.Push(currentNode.ImplementationType);
 
-            if (!node.RegistrationInfo.TryGetValue(project, out var currentNodeRegistration))
+            CreateNode(sb, currentNode);
+
+            foreach (var dependency in currentNode.DependsOn)
             {
-                //Create this node and edge from the parent perspective
-                return;
-            }
-            
-            CreateNode(sb, node.ClassName, currentNodeRegistration.Lifetime);
-
-            foreach (var dependency in node.DependsOn)
-            {
-                TraverseDependencyGraph(dependency, project, path, visitedNodes, sb, ambiguousRegistrationSubDependency);
-            }
-
-            ambiguousRegistrationSubDependency = ambiguousRegistrationSubDependency || currentNodeRegistration.UnresolvableImplementation;
-
-            var dependencies = GetReleventInterfaceAndImplementations(node.DependsOn, project);
-            foreach (var dependency in dependencies)
-            {
+                TraverseDependencyGraph(dependency, path, visitedNodes, sb);
                 string label;
-                if (!dependency.RegistrationInfo.TryGetValue(project, out var dependencyReg))
-                {
-                    // This dependency was not registered for this project.
-                    // In most cases, this is likely a runtime resolution failure.
-                    // However, if this node is part of a registration with an unresolvable implementation
-                    // (e.g., a factory returning an unknown type), this missing registration might be acceptable.
-                    if (!ambiguousRegistrationSubDependency)
-                    {
-                        if (currentNodeRegistration.IsFactoryResolved)
-                        {
-                            var color = "\"#808080\"";
-                            CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
-                            label = $"[label=\"WARNING NOT REGISTERED\\nFactory\", color={color}, fontcolor={color}]";
-                            CreateEdge(sb, node.ClassName, dependency.ClassName, label);
-                        }
-                        else
-                        {
-                            var color = GetBackgroundColorForLifetime(LifetimeTypes.Unknown);
-                            CreateNode(sb, dependency.ClassName, LifetimeTypes.Unknown);
-                            label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
-                            CreateEdge(sb, node.ClassName, dependency.ClassName, label);
-                        }
-                    }
 
-                    continue;
-                }
-
-                if (dependencyReg.Lifetime < currentNodeRegistration.Lifetime)
+                if (dependency.Lifetime < currentNode.Lifetime)
                 {
                     label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
                 }
@@ -399,8 +311,10 @@ namespace DependencyAnalyzer.Visualizers
                     label = "[label=\"Valid\", color=green, fontcolor=green]";
                 }
 
-                CreateEdge(sb, node.ClassName, dependency.ClassName, label);
+                CreateEdge(sb, currentNode, dependency, label);
             }
+
+            AddUnsatisfiedDependencies(currentNode, sb);
 
             path.Pop();
         }
@@ -417,6 +331,69 @@ namespace DependencyAnalyzer.Visualizers
             }
 
             sb.AppendLine($"</TABLE>\r\n>, shape=plaintext];");
+        }
+
+        private static void CreateUnregisteredNode(StringBuilder sb, INamedTypeSymbol symbol)
+        {
+            string nodeId = symbol.ToDisplayString();
+            string nodeLabel = symbol.Name;
+            LifetimeTypes lifetime = LifetimeTypes.Unregistered;
+
+            sb.AppendLine($"\"{nodeId}\" " +
+                        $"[label=\"{nodeLabel}\"," +
+                        $" color={GetBackgroundColorForLifetime(lifetime)}," +
+                        $" fontcolor={GetTextColorForLifetime(lifetime)}," +
+                        $" style=filled];");
+        }
+
+        private static void CreateUnregisteredEdge(StringBuilder sb, DependencyNode from, INamedTypeSymbol to)
+        {
+            var color = GetBackgroundColorForLifetime(LifetimeTypes.Unregistered);
+            string label = $"[label=\"WARNING NOT REGISTERED\", color={color}, fontcolor={color}]";
+
+            sb.AppendLine($"\"{GetIdFromNode(from)}\" -> \"{to.ToDisplayString()}\" {label}");
+        }
+
+
+        private static void CreateNode(StringBuilder sb, DependencyNode node)
+        {
+            string nodeId = GetIdFromNode(node);
+            string nodeLabel = node.ClassName;
+            LifetimeTypes lifetime = node.Lifetime;
+
+            if (node.ServiceInterface != null)
+            {
+                nodeLabel = $"{node.ImplementationType.Name} : {node.ServiceInterface.Name}\n{lifetime}";
+            }
+            else
+            {
+                nodeLabel = $"{node.ImplementationType.Name}\n{lifetime}";
+            }
+
+            sb.AppendLine($"\"{nodeId}\"" +
+                        $"[label=\"{nodeLabel}\"," +
+                        $" color={GetBackgroundColorForLifetime(lifetime)}," +
+                        $" fontcolor={GetTextColorForLifetime(lifetime)}," +
+                        $" style=filled];");
+        }
+
+        private static string GetIdFromNode(DependencyNode node)
+        {
+            string nodeId = "";
+            if (node.ServiceInterface != null)
+            {
+                nodeId = $"{node.ImplementationType.ToDisplayString()} : {node.ServiceInterface.ToDisplayString()}";
+            }
+            else
+            {
+                nodeId = $"{node.ImplementationType.ToDisplayString()}";
+            }
+            return nodeId;
+        }
+
+        private static void CreateEdge(StringBuilder sb, DependencyNode from, DependencyNode to, string label)
+        {
+            sb.AppendLine($"\"{GetIdFromNode(from)}\" -> \"{GetIdFromNode(to)}\" {label}");
         }
 
         private static string GetBackgroundColorForLifetime(LifetimeTypes lifetime)

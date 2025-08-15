@@ -1,4 +1,5 @@
 ﻿using DependencyAnalyzer.Interfaces;
+using DependencyAnalyzer.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -62,8 +63,8 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
                     {
                         registrations.Add(new RegistrationInfo
                         {
-                            Interface = null,
-                            Implementation = dbContextSymbol,
+                            ServiceInterface = null,
+                            ImplementationType = dbContextSymbol,
                             ProjectName = project.Name,
                             Lifetime = LifetimeTypes.PerWebRequest,
                             IsFactoryResolved = true
@@ -86,8 +87,8 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
                     {
                         registrations.Add(new RegistrationInfo
                         {
-                            Interface = interfaceType,
-                            Implementation = returnType,
+                            ServiceInterface = interfaceType,
+                            ImplementationType = returnType,
                             ProjectName = project.Name,
                             Lifetime = GetLifetime(methodName),
                             IsFactoryResolved = true
@@ -111,8 +112,8 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
 
                         registrations.Add(new RegistrationInfo
                         {
-                            Interface = interfaceType,
-                            Implementation = implementationType,
+                            ServiceInterface = interfaceType,
+                            ImplementationType = implementationType,
                             ProjectName = project.Name,
                             Lifetime = lifetime,
                             IsFactoryResolved = false
@@ -180,8 +181,8 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
                 {
                     registrations.Add(new RegistrationInfo
                     {
-                        Interface = null,
-                        Implementation = factory,
+                        ServiceInterface = null,
+                        ImplementationType = factory,
                         ProjectName = project.Name,
                         Lifetime = GetLifetime(methodName),
                         IsFactoryResolved = true
@@ -199,8 +200,8 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
             {
                 registrations.Add(new RegistrationInfo
                 {
-                    Interface = null,
-                    Implementation = dbContextType,
+                    ServiceInterface = null,
+                    ImplementationType = dbContextType,
                     ProjectName = project.Name,
                     Lifetime = LifetimeTypes.PerWebRequest,
                     IsFactoryResolved = true
@@ -232,8 +233,8 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
             {
                 registrations.Add(new RegistrationInfo
                 {
-                    Interface = iface,
-                    Implementation = impl,
+                    ServiceInterface = iface,
+                    ImplementationType = impl,
                     ProjectName = project.Name,
                     Lifetime = lifetime
                 });
@@ -259,8 +260,8 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
 
         registrations.Add(new RegistrationInfo
         {
-            Interface = interfaceSymbol,
-            Implementation = implementationSymbol,
+            ServiceInterface = interfaceSymbol,
+            ImplementationType = implementationSymbol,
             ProjectName = project.Name,
             Lifetime = LifetimeTypes.Transient,
             IsFactoryResolved = true

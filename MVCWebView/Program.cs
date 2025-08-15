@@ -1,4 +1,5 @@
 using DependencyAnalyzer;
+using DependencyAnalyzer.Models;
 using DependencyAnalyzer.Parsers;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis.MSBuild;
@@ -13,7 +14,7 @@ builder.Services.AddControllersWithViews()
 MSBuildLocator.RegisterDefaults();
 using var workspace = MSBuildWorkspace.Create();
 
-string solutionPath = "C:\\PathToYour\\Solution.sln";
+string solutionPath = "C:\\PathToSln.sln";
 
 //Generate full dependency graph for project and register as single to cache it
 var stopwatch = Stopwatch.StartNew();
@@ -36,7 +37,7 @@ Console.WriteLine($"~~~ ManualResolutionParser build ~~~");
 Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
 stopwatch.Restart();
 
-DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer);
+DependencyAnalyzer.Parsers.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.Parsers.DependencyAnalyzer(solutionAnalyzer, manParse);
 DependencyGraph graph = dependencyAnalyzer.BuildFullDependencyGraph();
 stopwatch.Stop(); 
 Console.WriteLine($"~~~ graph build ~~~");

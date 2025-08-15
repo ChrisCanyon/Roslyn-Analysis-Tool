@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Editing;
 
-namespace DependencyAnalyzer
+namespace DependencyAnalyzer._Random
 {
     public class rewriter
     {

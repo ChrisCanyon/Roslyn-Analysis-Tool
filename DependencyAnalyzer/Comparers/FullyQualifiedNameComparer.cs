@@ -1,6 +1,6 @@
 ﻿using Microsoft.CodeAnalysis;
 
-namespace DependencyAnalyzer
+namespace DependencyAnalyzer.Comparers
 {
     /// <summary>
     /// Provides a comparer for <see cref="INamedTypeSymbol"/> that compares symbols by their fully qualified metadata name,
@@ -21,14 +21,14 @@ namespace DependencyAnalyzer
             return GetKey(x) == GetKey(y);
         }
 
-        public int GetHashCode(INamedTypeSymbol obj)
+        public int GetHashCode(INamedTypeSymbol? obj)
         {
             return GetKey(obj).GetHashCode();
         }
 
-        private string GetKey(INamedTypeSymbol symbol)
+        private static string GetKey(INamedTypeSymbol? symbol)
         {
-            return symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return symbol == null ? "" : symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         }
     }
 }
