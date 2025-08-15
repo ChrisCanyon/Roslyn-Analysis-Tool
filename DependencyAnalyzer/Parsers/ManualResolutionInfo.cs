@@ -9,10 +9,10 @@ namespace DependencyAnalyzer.Parsers
         Dispose
     }
     public record ManualLifetimeInteractionInfo(
-        INamedTypeSymbol Type,
-        INamedTypeSymbol ContainingType,
-        string CodeSnippet,
+        INamedTypeSymbol Type, //the type disposed/resolved
+        INamedTypeSymbol ContainingType, //the class the dispose/resolve was contained in
         string Project,
+        string CodeSnippet, 
         string InvocationPath,
         ManualLifetimeInteractionKind Kind
     );
