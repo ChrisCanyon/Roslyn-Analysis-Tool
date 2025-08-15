@@ -3,8 +3,6 @@ using DependencyAnalyzer.Models;
 using DependencyAnalyzer.Parsers;
 using DependencyAnalyzer.Visualizers;
 using Microsoft.CodeAnalysis;
-using System.Xml.Linq;
-
 
 namespace DependencyAnalyzer
 {
@@ -20,35 +18,26 @@ namespace DependencyAnalyzer
             public string ErrorMessage;
         }
 
-        /*
-        public ColoredStringBuilder GenerateCycleReport(string className, string project, bool entireProject, bool allControllers)
+        public ColoredStringBuilder GenerateCycleReport(DependencyNode startNode, string project, bool entireProject, bool allControllers)
         {
             var sb = new ColoredStringBuilder();
             var visited = new List<DependencyNode>();
 
             if (!entireProject && !allControllers)
             {
-                sb.AppendLine($"Cycles for {className} dependency tree in project {project}:", ConsoleColor.Cyan);
+                sb.AppendLine($"Cycles for {startNode.ClassName} dependency tree in project {startNode.ProjectName}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
-                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
-                if(classNode == null)
-                {
-                    sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
-                }
-                else
-                {
-                    SearchForCycle(classNode, project, currentPath, visited, sb);
-                }
+                SearchForCycle(startNode, project, currentPath, visited, sb);
             }
             else
             {
                 sb.AppendLine($"Cycles for dependency in project {project}:", ConsoleColor.Cyan);
-                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.ProjectName == project);
 
                 if (allControllers)
                 {
-                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                    relevantNodes = relevantNodes.Where(x => x.Lifetime == LifetimeTypes.Controller);
                 }
 
                 foreach (var node in relevantNodes)
@@ -88,44 +77,34 @@ namespace DependencyAnalyzer
             visitedNodes.Add(node);
             path.Push(node.ImplementationType);
 
-            foreach (var dependency in node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project)))
+            foreach (var dependency in node.DependsOn)
             {
                 SearchForCycle(dependency, project, path, visitedNodes, sb);
             }
 
             path.Pop();
         }
-    */
 
-    /*
-        public ColoredStringBuilder GenerateExcessiveDependencies(string className, string project, bool entireProject, bool allControllers)
+        public ColoredStringBuilder GenerateExcessiveDependencies(DependencyNode? startNode, string project, bool entireProject, bool allControllers)
         {
             var sb = new ColoredStringBuilder();
             var visited = new List<DependencyNode>();
 
             if (!entireProject && !allControllers)
             {
-                sb.AppendLine($"Nodes with excessive dependencies for {className} depedency tree in project {project}:", ConsoleColor.Cyan);
+                sb.AppendLine($"Nodes with excessive dependencies for {startNode.ClassName} depedency tree in project {project}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
-                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
-                if (classNode == null)
-                {
-                    sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
-                }
-                else
-                {
-                    SearchForExcessiveDependencies(classNode, project, currentPath, visited, sb);
-                }
+                SearchForExcessiveDependencies(startNode, project, currentPath, visited, sb);
             }
             else
             {
                 sb.AppendLine($"Nodes with excessive dependencies in project {project}:", ConsoleColor.Cyan);
-                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.ProjectName == project);
 
                 if (allControllers)
                 {
-                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                    relevantNodes = relevantNodes.Where(x => x.Lifetime == LifetimeTypes.Controller);
                 }
 
                 foreach (var node in relevantNodes)
@@ -147,30 +126,18 @@ namespace DependencyAnalyzer
             visitedNodes.Add(node);
             path.Push(node.ImplementationType);
 
-            var dependencies = node.DependsOn.Where(x => x.RegistrationInfo.ContainsKey(project));
-
-            if(dependencies.Count() > 5)//TODO determine threshold
+            if(node.RawDependencies.Count > 5)//TODO determine threshold
             {
-                var mainText = $"[WARN] {node.ClassName} has {dependencies.Count()}";
-                if (dependencies.Any(dep => dep.RegistrationInfo[project].UnresolvableImplementation))
-                {
-                    sb.Append(mainText, ConsoleColor.Yellow);
-                    sb.AppendLine(" | Unresolveable Implementation - This number may be exaggerated", ConsoleColor.White);
-                }
-                else
-                {
-                    sb.AppendLine(mainText, ConsoleColor.Yellow);
-                }
-
+                var mainText = $"[WARN] {node.ClassName} has {node.RawDependencies.Count}";
+                sb.AppendLine(mainText, ConsoleColor.Yellow);
             }
-            foreach (var dependency in dependencies)
+            foreach (var dependency in node.DependsOn)
             {
                 SearchForExcessiveDependencies(dependency, project, path, visitedNodes, sb);
             }
 
             path.Pop();
         }
-        */
 
         public ColoredStringBuilder GenerateManualLifecycleManagementReport(DependencyNode? startNode, string project, bool entireProject, bool allControllers)
         {
