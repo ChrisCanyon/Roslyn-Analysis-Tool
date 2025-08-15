@@ -125,9 +125,7 @@ namespace DependencyAnalyzer.Visualizers
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph Dependencies {");
-            sb.AppendLine("\t rankdir=RL;");
-            CreateGraphvizLegend(sb);
+            GenerateBoilerPlateHeader(sb, "RL");
             var currentPath = new Stack<INamedTypeSymbol>();
             var visited = new List<DependencyNode>();
             TraverseConsumerGraph(startNode, currentPath, visited, sb);
@@ -184,13 +182,19 @@ namespace DependencyAnalyzer.Visualizers
             }
         }
 
+        private static void GenerateBoilerPlateHeader(StringBuilder sb, string rankdir = "LR")
+        {
+            sb.AppendLine("digraph Dependencies {");
+            sb.AppendLine($"\t rankdir={rankdir};");
+            sb.AppendLine("\t node [shape=ellipse, style=\"filled,dashed\", color=lightgray, fontcolor=black];");
+            CreateGraphvizLegend(sb);
+        }
+
         private static string GetNodeGraphvizString(DependencyNode startNode, string project)
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph Dependencies {");
-            sb.AppendLine("\t rankdir=LR;");
-            CreateGraphvizLegend(sb);
+            GenerateBoilerPlateHeader(sb);
             var currentPath = new Stack<INamedTypeSymbol>();
             var visited = new List<DependencyNode>();
             TraverseConsumerGraph(startNode, currentPath, visited, sb);
@@ -205,9 +209,7 @@ namespace DependencyAnalyzer.Visualizers
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph Dependencies {");
-            sb.AppendLine("\t rankdir=LR;");
-            CreateGraphvizLegend(sb);
+            GenerateBoilerPlateHeader(sb);
             var projectNodes = graph.Nodes.Where(x => x.ProjectName == project);
             foreach (var node in projectNodes)
             {
@@ -248,9 +250,7 @@ namespace DependencyAnalyzer.Visualizers
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph Dependencies {");
-            sb.AppendLine("\t rankdir=LR;");
-            CreateGraphvizLegend(sb);
+            GenerateBoilerPlateHeader(sb);
             var currentPath = new Stack<INamedTypeSymbol>();
             var visited = new List<DependencyNode>();
             TraverseDependencyGraph(startNode, currentPath, visited, sb);
@@ -264,9 +264,7 @@ namespace DependencyAnalyzer.Visualizers
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine("digraph controllers {");
-            sb.AppendLine("\t rankdir=LR;");
-            CreateGraphvizLegend(sb);
+            GenerateBoilerPlateHeader(sb);
             var controllersInProject = graph.Nodes.Where(
                 node => node.ProjectName == project && node.Lifetime == LifetimeTypes.Controller);
 
