@@ -1,7 +1,6 @@
-using Microsoft.Build.Evaluation;
+using DependencyAnalyzer.Comparers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.FindSymbols;
 
 namespace DependencyAnalyzer.Parsers;
 

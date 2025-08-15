@@ -1,4 +1,5 @@
 ﻿using DependencyAnalyzer.Interfaces;
+using DependencyAnalyzer.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 

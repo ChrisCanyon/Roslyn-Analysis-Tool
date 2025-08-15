@@ -2,10 +2,11 @@
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using DependencyAnalyzer.Parsers.MicrosoftDI;
 using DependencyAnalyzer.Parsers.Windsor;
-using DependencyAnalyzer.Parsers;
 using System.Collections.Immutable;
+using DependencyAnalyzer.Models;
+using DependencyAnalyzer.Comparers;
 
-namespace DependencyAnalyzer
+namespace DependencyAnalyzer.Parsers
 {
     public class SolutionAnalyzer : BaseParser
     {
@@ -15,21 +16,21 @@ namespace DependencyAnalyzer
         public static async Task<SolutionAnalyzer> Build(Solution solution)
         {
             var allTypesTask = GetAllTypesInSolutionAsync(solution);
- 
+
             var usesWindsor = false;
             var usesMicrosoftDi = false;
- 
+
             foreach (var project in solution.Projects)
             {
                 foreach (var document in project.Documents)
                 {
                     var text = document.GetTextAsync().Result.ToString();
- 
+
                     if (text.Contains("Castle.Windsor") || text.Contains("IWindsorContainer"))
                     {
                         usesWindsor = true;
                     }
- 
+
                     if (text.Contains("Microsoft.Extensions.DependencyInjection") || text.Contains("IServiceCollection"))
                     {
                         usesMicrosoftDi = true;
@@ -37,7 +38,7 @@ namespace DependencyAnalyzer
                 }
             }
             var allTypes = new List<INamedTypeSymbol>();
-            var registrationInfos =  new List<RegistrationInfo>();
+            var registrationInfos = new List<RegistrationInfo>();
             if (usesMicrosoftDi)
             {
                 var registrationHelper = new MicrosoftDIRegistrationParser();
@@ -72,11 +73,11 @@ namespace DependencyAnalyzer
                 return true;
 
             // Check base types for Controller or ControllerBase
-            if(IsSameOrSubclassOf(symbol, "Microsoft.AspNetCore.Mvc.Controller") ||
+            if (IsSameOrSubclassOf(symbol, "Microsoft.AspNetCore.Mvc.Controller") ||
                 IsSameOrSubclassOf(symbol, "Microsoft.AspNetCore.Mvc.ControllerBase") ||
                 IsSameOrSubclassOf(symbol, "System.Web.Mvc.Controller") ||
                 IsSameOrSubclassOf(symbol, "System.Web.Http.ApiController"))
-                    return true;
+                return true;
 
             // Check for [ApiController] or [Controller] attribute
             if (symbol.GetAttributes().Any(attr =>
@@ -113,21 +114,22 @@ namespace DependencyAnalyzer
 
             var relatedRegistrations = new List<RegistrationInfo>();
 
-            if(symbol.TypeKind == TypeKind.Interface)
+            if (symbol.TypeKind == TypeKind.Interface)
             {
                 relatedRegistrations = RegistrationInfos.Where(registration =>
                     comparer.Equals(registration.ServiceInterface, symbol)
                 ).ToList();
             }
-            else if(symbol.TypeKind == TypeKind.Class)
+            else if (symbol.TypeKind == TypeKind.Class)
             {
                 var exactInterface = symbol.AllInterfaces.ToImmutableHashSet(comparer);
                 var openInterfaces = symbol.AllInterfaces.Select(i => i.OriginalDefinition)
                                     .ToImmutableHashSet(comparer);
 
-                relatedRegistrations = RegistrationInfos.Where(registration => {
+                relatedRegistrations = RegistrationInfos.Where(registration =>
+                {
                     //If this is an implementation
-                    if (comparer.Equals(registration.ImplementationType, symbol)) 
+                    if (comparer.Equals(registration.ImplementationType, symbol))
                         return true;
 
                     //Or a type that implements an interface with Unresolvable Implementation (probably weird factory method or registration from assembly)
@@ -151,7 +153,7 @@ namespace DependencyAnalyzer
             {
                 //I think i need to add the implementation to the factory method here
                 //if is factory method and has interface already
-                if(symbol.TypeKind == TypeKind.Class && registration.ServiceInterface != null && registration.ImplementationType == null)
+                if (symbol.TypeKind == TypeKind.Class && registration.ServiceInterface != null && registration.ImplementationType == null)
                 {
                     var completeRegistration = new RegistrationInfo
                     {

@@ -1,37 +1,15 @@
-﻿using Microsoft.CodeAnalysis;
-using System.Text.Json.Serialization;
+﻿using DependencyAnalyzer.Comparers;
+using Microsoft.CodeAnalysis;
 
-namespace DependencyAnalyzer
+namespace DependencyAnalyzer.Models
 {
-    //there are ordered by shortest to longest lived
-    //a simple > or < comparison tells you if you are longer or shorter lived
-    public enum LifetimeTypes
-    {
-        Controller,
-        Transient,
-        PerWebRequest,
-        Singleton,
-        Unregistered
-    }
-
-    public class RegistrationInfo
-    {
-        public INamedTypeSymbol? ImplementationType { get; set; } 
-        public INamedTypeSymbol? ServiceInterface { get; set; }
-        public required string ProjectName { get; set; }
-        public LifetimeTypes Lifetime { get; set; }
-        public bool IsFactoryResolved { get; set; } = false;
-        //if this is true we assume ANY implementation of the interface is valid
-        public bool UnresolvableImplementation { get; set; } = false;
-    }
-
     public class DependencyNode
     {
         public required INamedTypeSymbol ImplementationType { get; set; }
         public required INamedTypeSymbol? ServiceInterface { get; set; }
         public required string ProjectName { get; set; }
-        public required string ClassName { get; set; }
         public LifetimeTypes Lifetime { get; set; }
+        public required string ClassName { get; set; }
         public List<DependencyNode> DependsOn { get; set; } = [];
         public List<DependencyNode> DependedOnBy { get; set; } = [];
         public List<INamedTypeSymbol> RawDependencies { get; set; } = [];
@@ -49,7 +27,7 @@ namespace DependencyAnalyzer
                 {
                     // Closed request: exact match OR open registration with same original def
                     if (cmp.Equals(ServiceInterface, requested)) return true; // exact closed
-                    if (ServiceInterface.IsUnboundGenericType && 
+                    if (ServiceInterface.IsUnboundGenericType &&
                         cmp.Equals(ServiceInterface.OriginalDefinition, requested.OriginalDefinition))
                         return true; // open generic registration satisfies closed
                     return false;
@@ -67,7 +45,7 @@ namespace DependencyAnalyzer
                 if (!requested.IsUnboundGenericType)
                 {
                     if (cmp.Equals(ImplementationType, requested)) return true; // exact closed impl
-                    if (ImplementationType.IsUnboundGenericType && 
+                    if (ImplementationType.IsUnboundGenericType &&
                         cmp.Equals(ImplementationType.OriginalDefinition, requested.OriginalDefinition))
                         return true; // open impl satisfies closed
                     return false;
@@ -81,8 +59,8 @@ namespace DependencyAnalyzer
             return false;
         }
 
-        private List<INamedTypeSymbol>? _unsatisfiedDependencies = null; 
-        
+        private List<INamedTypeSymbol>? _unsatisfiedDependencies = null;
+
         public List<INamedTypeSymbol> UnsatisfiedDependencies()
         {
             if (_unsatisfiedDependencies != null) return _unsatisfiedDependencies;
@@ -91,7 +69,7 @@ namespace DependencyAnalyzer
 
             foreach (var dependency in RawDependencies)
             {
-                if(!DependsOn.Any(x => x.SatisfiesDependency(dependency)))
+                if (!DependsOn.Any(x => x.SatisfiesDependency(dependency)))
                 {
                     ret.Add(dependency);
                 }

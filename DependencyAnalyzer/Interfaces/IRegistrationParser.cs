@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using DependencyAnalyzer.Models;
+using Microsoft.CodeAnalysis;
 
 namespace DependencyAnalyzer.Interfaces
 {

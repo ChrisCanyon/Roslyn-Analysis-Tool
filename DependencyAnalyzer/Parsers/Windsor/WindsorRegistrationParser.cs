@@ -1,7 +1,8 @@
-﻿using DependencyAnalyzer.Interfaces;
+﻿using DependencyAnalyzer.Comparers;
+using DependencyAnalyzer.Interfaces;
+using DependencyAnalyzer.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Collections.Generic;
 
 namespace DependencyAnalyzer.Parsers.Windsor
 {
@@ -49,6 +50,7 @@ namespace DependencyAnalyzer.Parsers.Windsor
             return ret;
         }
 
+       
         private async Task<List<RegistrationInfo>> GetRegistrationsFromProjectAsync(Project project, Solution solution)
         {
             var registrations = new List<RegistrationInfo>();

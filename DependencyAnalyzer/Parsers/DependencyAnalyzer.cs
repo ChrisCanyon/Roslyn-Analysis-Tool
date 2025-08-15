@@ -1,7 +1,8 @@
-﻿using DependencyAnalyzer.Parsers;
+﻿using DependencyAnalyzer.Comparers;
+using DependencyAnalyzer.Models;
 using Microsoft.CodeAnalysis;
 
-namespace DependencyAnalyzer
+namespace DependencyAnalyzer.Parsers
 {
     public class DependencyAnalyzer : BaseParser
     {
@@ -28,7 +29,7 @@ namespace DependencyAnalyzer
 
                 dependencies.AddRange(GetDependenciesFromConstructors(classSymbol.Constructors));
                 dependencies.AddRange(GetManualResolvedDependenciesForClass(classSymbol));
-               
+
                 dependencyMap[classSymbol] = dependencies;
             }
 
@@ -60,7 +61,7 @@ namespace DependencyAnalyzer
                         if (depType.IsGenericType)
                         {
                             if (depType.TypeArguments.Length > 0 &&
-                                (depType.Name is "IEnumerable" or "Lazy"))
+                                depType.Name is "IEnumerable" or "Lazy")
                             {
                                 foreach (var arg in depType.TypeArguments.OfType<INamedTypeSymbol>())
                                 {
@@ -134,12 +135,12 @@ namespace DependencyAnalyzer
                         x.Lifetime
             ), new RegInfoKeyComparer());
 
-            foreach ( var regiGroup in regiGroups)
+            foreach (var regiGroup in regiGroups)
             {
-                if(regiGroup.Count() > 1)
+                if (regiGroup.Count() > 1)
                 {
                     Console.WriteLine("Registration for same service/impl/project/lifestyle");
-                    regiGroup.ToList().ForEach(x => 
+                    regiGroup.ToList().ForEach(x =>
                         Console.WriteLine($"Implementation: {x.ImplementationType?.ToDisplayString()}, " +
                         $"Interface: {x.ServiceInterface?.ToDisplayString()}, " +
                         $"Project: {x.ProjectName}, " +
@@ -188,39 +189,10 @@ namespace DependencyAnalyzer
                                         .Where(x => x.ProjectName == dependantNode.ProjectName &&
                                                     x.SatisfiesDependency(dependencySymbol)
                                         ).ToList();
-                            
+
                         dependantNode.DependsOn.AddRange(dependencyNodes);
                         dependencyNodes.ForEach(x => x.DependedOnBy.Add(dependantNode));
                     }
-                }
-            }
-        }
-
-        private sealed class RegInfoKeyComparer : IEqualityComparer<(INamedTypeSymbol? ImplementationType, INamedTypeSymbol? ServiceInterface, string projectName, LifetimeTypes lifetime)>
-        {
-            public bool Equals(
-                (INamedTypeSymbol? ImplementationType, INamedTypeSymbol? ServiceInterface, string projectName, LifetimeTypes lifetime) x,
-                (INamedTypeSymbol? ImplementationType, INamedTypeSymbol? ServiceInterface, string projectName, LifetimeTypes lifetime) y)
-            {
-                var comparer = new FullyQualifiedNameComparer();
-                return comparer.Equals(x.ImplementationType, y.ImplementationType) &&
-                        comparer.Equals(x.ServiceInterface, y.ServiceInterface) &&
-                        x.lifetime == y.lifetime &&
-                        x.projectName == y.projectName;
-
-            }
-
-            public int GetHashCode((INamedTypeSymbol?, INamedTypeSymbol?, string, LifetimeTypes) obj)
-            {
-                unchecked
-                {
-                    var cmp = new FullyQualifiedNameComparer();
-                    var hash = 17;
-                    hash = hash * 31 + cmp.GetHashCode(obj.Item1);
-                    hash = hash * 31 + cmp.GetHashCode(obj.Item2);
-                    hash = hash * 31 + obj.Item3.GetHashCode();
-                    hash = hash * 31 + obj.Item4.GetHashCode();
-                    return hash;
                 }
             }
         }

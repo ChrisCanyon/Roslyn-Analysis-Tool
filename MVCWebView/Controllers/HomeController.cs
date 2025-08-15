@@ -1,4 +1,4 @@
-using DependencyAnalyzer;
+using DependencyAnalyzer.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MVCWebView.Controllers
@@ -15,7 +15,7 @@ namespace MVCWebView.Controllers
 
         public IActionResult Index()
         {
-            var allProjects = _graph.Nodes.SelectMany(x => x.ProjectName)
+            var allProjects = _graph.Nodes.Select(x => x.ProjectName)
                                             .Distinct().ToList();
 
             ViewData["ProjectList"] = allProjects;

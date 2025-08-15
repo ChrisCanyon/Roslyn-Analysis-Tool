@@ -1,6 +1,6 @@
 ﻿using Microsoft.CodeAnalysis;
 
-namespace DependencyAnalyzer
+namespace DependencyAnalyzer.Comparers
 {
     /// <summary>
     /// Provides a comparer for <see cref="INamedTypeSymbol"/> that compares symbols by their fully qualified metadata name,

@@ -1,6 +1,5 @@
-﻿using DependencyAnalyzer;
-using DependencyAnalyzer.Parsers;
-using DependencyAnalyzer.Visualizers;
+﻿using DependencyAnalyzer.Parsers;
+using DependencyAnalyzer.Models;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis.MSBuild;
 using System.Diagnostics;
@@ -8,7 +7,7 @@ using System.Diagnostics;
 MSBuildLocator.RegisterDefaults();
 using var workspace = MSBuildWorkspace.Create();
 
-string solutionPath = "C:\\Pathtosolution.sln";
+string solutionPath = "C:\\PathToSln.sln";
 
 //Generate full dependency graph for project and register as single to cache it
 var stopwatch = Stopwatch.StartNew();
@@ -31,13 +30,10 @@ Console.WriteLine($"~~~ ManualResolutionParser build ~~~");
 Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
 stopwatch.Restart();
 
-DependencyAnalyzer.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.DependencyAnalyzer(solutionAnalyzer, manParse);
+DependencyAnalyzer.Parsers.DependencyAnalyzer dependencyAnalyzer = new DependencyAnalyzer.Parsers.DependencyAnalyzer(solutionAnalyzer, manParse);
 DependencyGraph graph = dependencyAnalyzer.BuildFullDependencyGraph();
 stopwatch.Stop();
 Console.WriteLine($"~~~ graph build ~~~");
 Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
 
-GraphvizConverter.CreateFullGraphvizForProject(graph, "InSiteMVC", false);
-
 //Do something here if you want to play around on the command line
-var x = 1;

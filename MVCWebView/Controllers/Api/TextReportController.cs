@@ -1,8 +1,9 @@
 ﻿using DependencyAnalyzer;
+using DependencyAnalyzer.Models;
 using DependencyAnalyzer.Visualizers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-/*
+
 namespace MVCWebView.Controllers.Api
 {
     [Route("api/[controller]")]
@@ -41,28 +42,30 @@ namespace MVCWebView.Controllers.Api
                     return BadRequest("Class name is required for single node reports");
                 }
 
-                var node = _graph.Nodes.Where(x =>
-                        string.Compare(x.ClassName, className, true) == 0).FirstOrDefault();
-                if (node == null)
+                var classNodes = _graph.Nodes.Where(x =>
+                        string.Compare(x.ClassName, className, true) == 0);
+                if (classNodes.Count() == 0)
                 {
                     return NotFound($"Class with name {className} not found");
                 }
-                if (!node.RegistrationInfo.TryGetValue(project, out var projectReg))
+
+                var node = classNodes.Where(x => x.ProjectName == project).FirstOrDefault();
+                if (node == null)
                 {
                     return NotFound($"{className} not registered in {project}");
                 }
 
-                className = _graph.Nodes.Where(x => string.Equals(x.ClassName, className, StringComparison.OrdinalIgnoreCase)).First().ClassName;
+                className = node.ClassName;
             }
 
             ColoredStringBuilder? result = type switch
             {
-                "Tree" => _runner.GenerateTreeReport(className, project, entireProject, allControllers),
-                "Cycles" => _runner.GenerateCycleReport(className, project, entireProject, allControllers),
-                "ExcessiveDependencies" => _runner.GenerateExcessiveDependencies(className, project, entireProject, allControllers),
-                "ManualLifecycleManagement" => _runner.GenerateManualLifecycleManagementReport(className, project, entireProject, allControllers),
-                "UnusedMethods" => _runner.GenerateUnusedMethodsReport(className, project, entireProject, allControllers),
-                "ManualInstantiation" => _runner.GenerateManualInstantiationReport(className, project, entireProject, allControllers),
+                //"Tree" => _runner.GenerateTreeReport(className, project, entireProject, allControllers),
+                //"Cycles" => _runner.GenerateCycleReport(className, project, entireProject, allControllers),
+                //"ExcessiveDependencies" => _runner.GenerateExcessiveDependencies(className, project, entireProject, allControllers),
+                //"ManualLifecycleManagement" => _runner.GenerateManualLifecycleManagementReport(className, project, entireProject, allControllers),
+                //"UnusedMethods" => _runner.GenerateUnusedMethodsReport(className, project, entireProject, allControllers),
+                //"ManualInstantiation" => _runner.GenerateManualInstantiationReport(className, project, entireProject, allControllers),
                 _ => null
             };
 
@@ -73,4 +76,3 @@ namespace MVCWebView.Controllers.Api
         }
     }
 }
-*/
