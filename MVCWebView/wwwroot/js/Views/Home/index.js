@@ -122,11 +122,14 @@ async function loadTextReports() {
 };
 
 async function fetchTextReport(endpoint, outputId){
-    const className = document.getElementById("classInput").value;
+    const rawClassName = document.getElementById('classInput').value;
+    const parts = rawClassName.split(":").map(s => s.trim());
+    const className = parts[0] || "";
+    const interface = parts[1] || "";
     const project = document.getElementById("projectInput").value;
 
 
-    var params = `type=${encodeURIComponent(endpoint)}&className=${encodeURIComponent(className)}&project=${encodeURIComponent(project)}&entireProject=${encodeURIComponent(entireProject)}&allControllers=${encodeURIComponent(allControllers) }`
+    var params = `type=${encodeURIComponent(endpoint)}&implementationName=${encodeURIComponent(className)}&interfaceName=${encodeURIComponent(interface)}&project=${encodeURIComponent(project)}&entireProject=${encodeURIComponent(entireProject)}&allControllers=${encodeURIComponent(allControllers) }`
     const response = await fetch(`/api/TextReport/GetTextReport?${params}`);
 
     if (!response.ok) {

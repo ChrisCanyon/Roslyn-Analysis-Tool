@@ -3,6 +3,7 @@ using DependencyAnalyzer.Models;
 using DependencyAnalyzer.Visualizers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System.Xml.Linq;
 
 namespace MVCWebView.Controllers.Api
 {
@@ -27,7 +28,8 @@ namespace MVCWebView.Controllers.Api
             [FromQuery] string project,
             [FromQuery] bool entireProject,
             [FromQuery] bool allControllers,
-            [FromQuery] string className = "")
+            [FromQuery] string implementationName = "",
+            [FromQuery] string interfaceName = "")
         {
             if (string.IsNullOrWhiteSpace(type))
                 return BadRequest("Report type is required.");
@@ -35,32 +37,48 @@ namespace MVCWebView.Controllers.Api
             if (string.IsNullOrWhiteSpace(project))
                 return BadRequest("Project is required.");
 
+            DependencyNode? node = null;
             if (!entireProject && !allControllers)
             {
-                if(className == string.Empty)
+                if(implementationName == string.Empty)
                 {
                     return BadRequest("Class name is required for single node reports");
                 }
 
-                var classNodes = _graph.Nodes.Where(x =>
-                        string.Compare(x.ClassName, className, true) == 0);
+                IEnumerable<DependencyNode> classNodes = _graph.Nodes.Where(x =>
+                        string.Compare(x.ClassName, implementationName, true) == 0);
                 if (classNodes.Count() == 0)
                 {
-                    return NotFound($"Class with name {className} not found");
+                    return NotFound($"Class with name {implementationName} not found");
                 }
 
-                var node = classNodes.Where(x => x.ProjectName == project).FirstOrDefault();
-                if (node == null)
+                IEnumerable<DependencyNode> currentProjectNodes = classNodes.Where(x => x.ProjectName == project);
+                if (currentProjectNodes.Count() == 0)
                 {
-                    return NotFound($"{className} not registered in {project}");
+                    return NotFound($"{implementationName} not registered in {project}");
                 }
 
-                className = node.ClassName;
+                if (interfaceName == string.Empty)
+                {
+                    //Pure concrete impl
+                    node = currentProjectNodes.First();
+                }
+                else
+                {
+                    node = currentProjectNodes.Where(x => x.ServiceInterface != null &&
+                                string.Compare(x.ServiceInterface.ToDisplayString(), interfaceName, true) == 0)
+                            .FirstOrDefault();
+
+                    if (node == null)
+                    {
+                        return NotFound($"No registration for {implementationName} implementing {interfaceName} in {project}");
+                    }
+                }
             }
 
             ColoredStringBuilder? result = type switch
             {
-                //"Tree" => _runner.GenerateTreeReport(className, project, entireProject, allControllers),
+                "Tree" => _runner.GenerateTreeReport(node, project, entireProject, allControllers),
                 //"Cycles" => _runner.GenerateCycleReport(className, project, entireProject, allControllers),
                 //"ExcessiveDependencies" => _runner.GenerateExcessiveDependencies(className, project, entireProject, allControllers),
                 //"ManualLifecycleManagement" => _runner.GenerateManualLifecycleManagementReport(className, project, entireProject, allControllers),

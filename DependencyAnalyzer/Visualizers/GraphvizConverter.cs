@@ -142,7 +142,9 @@ namespace DependencyAnalyzer.Visualizers
                     $"{String.Join(" ->", path.Select(x => x.Name))} -> {currentNode.ImplementationType.Name}");
                 return;
             }
-            if (visitedNodes.Any(x => x.ClassName == currentNode.ClassName)) return;
+
+            if (visitedNodes.Any(x => x.ClassName == currentNode.ClassName && 
+                    x.ServiceInterface?.ToDisplayString() == currentNode.ServiceInterface?.ToDisplayString())) return;
 
             visitedNodes.Add(currentNode);
             path.Push(currentNode.ImplementationType);
@@ -287,7 +289,8 @@ namespace DependencyAnalyzer.Visualizers
                     $"{String.Join(" -> ", path.Select(x => x.Name))} -> {currentNode.ImplementationType.Name}");
                 return;
             }
-            if (visitedNodes.Any(x => x.ClassName == currentNode.ClassName)) return;
+            if (visitedNodes.Any(x => x.ClassName == currentNode.ClassName &&
+                                x.ServiceInterface?.ToDisplayString() == currentNode.ServiceInterface?.ToDisplayString())) return;
 
             visitedNodes.Add(currentNode);
             path.Push(currentNode.ImplementationType);

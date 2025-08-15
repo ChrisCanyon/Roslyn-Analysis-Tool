@@ -1,6 +1,7 @@
-﻿using Microsoft.CodeAnalysis;
-using System.Text;
-/*
+﻿using DependencyAnalyzer.Comparers;
+using DependencyAnalyzer.Models;
+using Microsoft.CodeAnalysis;
+
 namespace DependencyAnalyzer.Visualizers
 {
     public class NodePrinter
@@ -10,12 +11,12 @@ namespace DependencyAnalyzer.Visualizers
             var sb = new ColoredStringBuilder();
             sb.AppendLine($"OBJECTS {startNode.ClassName} IS DEPENDENT ON FOR PROJECT {project}", ConsoleColor.Cyan);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
+            var rootLifetime = startNode.Lifetime;
             TraverseDependencyGraph(startNode, project, rootLifetime, "", true, currentPath, sb);
             return sb;
         }
 
-        private static void TraverseDependencyGraph(DependencyNode node,
+        private static void TraverseDependencyGraph(DependencyNode currentNode,
             string project,
             LifetimeTypes parentLifetime,
             string prefix,
@@ -25,56 +26,28 @@ namespace DependencyAnalyzer.Visualizers
             bool ambiguousRegistrationSubDependency = false)
         {
             string marker = prefix == "" ? "" : isLast ? "└─ " : "├─ ";
-            var cycle = path.Contains(node.ImplementationType, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
-
-            if (!node.RegistrationInfo.TryGetValue(project, out var currentNodeRegistration))
-            {
-                // This dependency was not registered for this project.
-                // In most cases, this is likely a runtime resolution failure.
-                // However, if this node is part of a registration with an unresolvable implementation
-                // (e.g., a factory returning an unknown type), this missing registration might be acceptable.
-                if (!ambiguousRegistrationSubDependency)
-                {
-                    var warn = "[WARN] NOT REGISTERED IN PROJECT";
-                    sb.AppendLine($"{prefix}{marker}{node.ClassName}{cycle}{warn}", ConsoleColor.Magenta);
-                }
-                return;
-            }
+            var cycle = path.Contains(currentNode.ImplementationType, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
 
             ConsoleColor consoleColor = ConsoleColor.Green;
-            if (currentNodeRegistration.Lifetime < parentLifetime)
+            if (currentNode.Lifetime < parentLifetime)
             {
                 consoleColor = ConsoleColor.Red;
             }
 
-            ambiguousRegistrationSubDependency = ambiguousRegistrationSubDependency || currentNodeRegistration.UnresolvableImplementation;
-
-            // If this is a sub-dependency of a registration with an unresolvable implementation,
-            // we can't be certain this dependency is actually used in the project.
-            // Highlight it as ambiguous (e.g., could be conditionally resolved at runtime).
-            if (ambiguousRegistrationSubDependency)
-            {
-                consoleColor = ConsoleColor.Yellow;
-            } 
-
-            var implementationNote = currentNodeRegistration.UnresolvableImplementation ? " [Ambiguous]" : "";
-            var factoryNote = currentNodeRegistration.IsFactoryResolved ? " [Factory Resolved]" : "";
-            sb.Append($"{prefix}{marker}{node.ClassName}{cycle}{factoryNote}{implementationNote}", consoleColor);
-            var lifestyleText = $" [{currentNodeRegistration.Lifetime}]";
-            sb.AppendLine(lifestyleText, GetColorForLifetime(currentNodeRegistration.Lifetime));
+            sb.Append($"{prefix}{marker}{currentNode.ClassName}{cycle}", consoleColor);
+            var lifestyleText = $" [{currentNode.Lifetime}]";
+            sb.AppendLine(lifestyleText, GetColorForLifetime(currentNode.Lifetime));
 
             if (!string.IsNullOrEmpty(cycle))
                 return;
 
-            path.Push(node.ImplementationType);
+            path.Push(currentNode.ImplementationType);
 
-            var deps = GetReleventInterfaceAndImplementations(node.DependsOn, project);
-
-            for (int i = 0; i < deps.Count; i++)
+            for (int i = 0; i < currentNode.DependsOn.Count; i++)
             {
-                var isLastChild = i == deps.Count - 1;
+                var isLastChild = i == currentNode.DependsOn.Count - 1;
                 var childPrefix = prefix + (isLast ? "   " : "│  ");
-                TraverseDependencyGraph(deps[i], project, currentNodeRegistration.Lifetime, childPrefix, isLastChild, path, sb);
+                TraverseDependencyGraph(currentNode.DependsOn[i], project, currentNode.Lifetime, childPrefix, isLastChild, path, sb);
             }
 
             path.Pop();
@@ -85,37 +58,35 @@ namespace DependencyAnalyzer.Visualizers
             var sb = new ColoredStringBuilder();
             sb.AppendLine($"OBJECTS DEPENDENT ON {startNode.ClassName} FOR PROJECT {project}", ConsoleColor.Cyan);
             var currentPath = new Stack<INamedTypeSymbol>();
-            var rootLifetime = startNode.RegistrationInfo[project].Lifetime;
+            var rootLifetime = startNode.Lifetime;
             TraverseConsumerGraph(startNode, project, rootLifetime, "", true, currentPath, sb);
             return sb;
         }
 
-        private static void TraverseConsumerGraph(DependencyNode node, string project, LifetimeTypes rootLifetime, string prefix, bool isLast, Stack<INamedTypeSymbol> path, ColoredStringBuilder sb)
+        private static void TraverseConsumerGraph(DependencyNode currentNode, string project, LifetimeTypes rootLifetime, string prefix, bool isLast, Stack<INamedTypeSymbol> path, ColoredStringBuilder sb)
         {
-            if (!node.RegistrationInfo.TryGetValue(project, out var projectRegistration)) return;
-
             ConsoleColor consoleColor = ConsoleColor.Green;
-            if (projectRegistration.Lifetime > rootLifetime)
+            if (currentNode.Lifetime > rootLifetime)
             {
                 consoleColor = ConsoleColor.Red;
             }
-            if(projectRegistration.Lifetime == LifetimeTypes.Controller)
+            if(currentNode.Lifetime == LifetimeTypes.Controller)
             {
                 consoleColor = ConsoleColor.Gray;
             }
 
             string marker = prefix == "" ? "" : isLast ? "╘═ " : "╞═ ";
-            var cycle = path.Contains(node.ImplementationType, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
-            sb.Append($"{prefix}{marker}{node.ClassName}{cycle}", consoleColor);
-            var lifestyleText = $" [{projectRegistration.Lifetime}]";
-            sb.AppendLine(lifestyleText, GetColorForLifetime(projectRegistration.Lifetime));
+            var cycle = path.Contains(currentNode.ImplementationType, new FullyQualifiedNameComparer()) ? " ↩ (cycle)" : "";
+            sb.Append($"{prefix}{marker}{currentNode.ClassName}{cycle}", consoleColor);
+            var lifestyleText = $" [{currentNode.Lifetime}]";
+            sb.AppendLine(lifestyleText, GetColorForLifetime(currentNode.Lifetime));
 
             if (!string.IsNullOrEmpty(cycle))
                 return;
 
-            path.Push(node.ImplementationType);
+            path.Push(currentNode.ImplementationType);
 
-            var dependants = node.DependedOnBy.ToList();
+            var dependants = currentNode.DependedOnBy.ToList();
             for (int i = 0; i < dependants.Count; i++)
             {
                 var isLastChild = i == dependants.Count - 1;
@@ -124,49 +95,6 @@ namespace DependencyAnalyzer.Visualizers
             }
 
             path.Pop();
-        }
-
-        public static string PrintRegistrations(DependencyNode node)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine($"Class: {node.ClassName}");
-            sb.AppendLine();
-            sb.AppendLine("Registrations:");
-
-            if (node.RegistrationInfo.Count == 0)
-            {
-                sb.AppendLine("  (none)");
-                return sb.ToString();
-            }
-
-            foreach (var (project, registartion) in node.RegistrationInfo)
-            {
-                sb.AppendLine(registartion.Print());
-            }
-            return sb.ToString();
-        }
-
-        //TODO MAKE THIS COMMON WITH GRAPHVIZ CONVERTER
-        private static List<DependencyNode> GetReleventInterfaceAndImplementations(IEnumerable<DependencyNode> dependencies, string project)
-        {
-            var depInterfaces = dependencies.Where(x => x.IsInterface).ToList();
-            var relevantImplementations = dependencies.Where(dependency =>
-            {
-                //if this is an implementation for a needed interface that is registered in the project
-                if (dependency.RegistrationInfo.ContainsKey(project)
-                && dependency.Implements.Any(inter => depInterfaces.Contains(inter)))
-                {
-                    return true;
-                }
-                //Or if this is a dependency that isnt an interface implementation
-                if (dependency.Implements.Count == 0 && dependency.IsInterface == false)
-                {
-                    return true;
-                }
-                return false;
-            });
-
-            return depInterfaces.Concat(relevantImplementations).ToList();
         }
 
         private static ConsoleColor GetColorForLifetime(LifetimeTypes lifetime)
@@ -187,4 +115,3 @@ namespace DependencyAnalyzer.Visualizers
         }
     }
 }
-*/

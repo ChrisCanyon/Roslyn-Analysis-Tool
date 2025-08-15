@@ -2,6 +2,7 @@
 using DependencyAnalyzer.Parsers;
 using DependencyAnalyzer.Visualizers;
 using Microsoft.CodeAnalysis;
+using System.Xml.Linq;
 
 
 namespace DependencyAnalyzer
@@ -11,8 +12,6 @@ namespace DependencyAnalyzer
         DependencyGraph dependencyGraph,
         ManualResolutionParser manualResolutionParser)
     {
-        /*
-
                 public struct DependencyMismatch
                 {
                     public string Project;
@@ -20,6 +19,7 @@ namespace DependencyAnalyzer
                     public string ErrorMessage;
                 }
 
+        /*
                 public ColoredStringBuilder GenerateCycleReport(string className, string project, bool entireProject, bool allControllers)
                 {
                     var sb = new ColoredStringBuilder();
@@ -94,7 +94,9 @@ namespace DependencyAnalyzer
 
                     path.Pop();
                 }
+        */
 
+        /*
                 public ColoredStringBuilder GenerateExcessiveDependencies(string className, string project, bool entireProject, bool allControllers)
                 {
                     var sb = new ColoredStringBuilder();
@@ -167,7 +169,9 @@ namespace DependencyAnalyzer
 
                     path.Pop();
                 }
+        */
 
+        /*
                 public ColoredStringBuilder GenerateManualLifecycleManagementReport(string className, string project, bool entireProject, bool allControllers)
                 {
                     var resolveNotes = new ColoredStringBuilder();
@@ -294,163 +298,155 @@ namespace DependencyAnalyzer
                     path.Pop();
                     return ret;
                 }
-
-                private void TODO(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
-                {
-                  //TODO stop referencing this
-                }
-
-                public ColoredStringBuilder GenerateUnusedMethodsReport(string className, string project, bool entireProject, bool allControllers)
-                {
-                    var sb = new ColoredStringBuilder();
-                    var visited = new List<DependencyNode>();
-
-                    if (!entireProject && !allControllers)
-                    {
-                        sb.AppendLine($"TODO UNUSED METHODS", ConsoleColor.Cyan);
-
-                        var currentPath = new Stack<INamedTypeSymbol>();
-                        var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
-                        if (classNode == null)
-                        {
-                            sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
-                        }
-                        else
-                        {
-                            TODO(classNode, project, currentPath, visited, sb);
-                        }
-                    }
-                    else
-                    {
-                        sb.AppendLine($"TODO UNUSED METHODS", ConsoleColor.Cyan);
-                        var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
-
-                        if (allControllers)
-                        {
-                            relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
-                        }
-
-                        foreach (var node in relevantNodes)
-                        {
-                            var currentPath = new Stack<INamedTypeSymbol>();
-                            TODO(node, project, currentPath, visited, sb);
-                        }
-                    }
-
-                    return sb;
-                }
-
-                public ColoredStringBuilder GenerateManualInstantiationReport(string className, string project, bool entireProject, bool allControllers)
-                {
-                    var sb = new ColoredStringBuilder();
-                    var visited = new List<DependencyNode>();
-
-                    if (!entireProject && !allControllers)
-                    {
-                        sb.AppendLine($"TODO MANUAL INSTANTIATION", ConsoleColor.Cyan);
-
-                        var currentPath = new Stack<INamedTypeSymbol>();
-                        var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
-                        if (classNode == null)
-                        {
-                            sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
-                        }
-                        else
-                        {
-                            TODO(classNode, project, currentPath, visited, sb);
-                        }
-                    }
-                    else
-                    {
-                        sb.AppendLine($"TODO MANUAL INSTANTIATION", ConsoleColor.Cyan);
-                        var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
-
-                        if (allControllers)
-                        {
-                            relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
-                        }
-
-                        foreach (var node in relevantNodes)
-                        {
-                            var currentPath = new Stack<INamedTypeSymbol>();
-                            TODO(node, project, currentPath, visited, sb);
-                        }
-                    }
-
-                    return sb;
-                }
-
-
-                public ColoredStringBuilder GenerateTreeReport(string className, string project, bool entireProject, bool allControllers)
-                {
-                    var sb = new ColoredStringBuilder();
-                    var visited = new List<DependencyNode>();
-
-                    if (!entireProject && !allControllers)
-                    {
-                        var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
-                        if (classNode == null)
-                        {
-                            sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
-                        }
-                        else
-                        {
-                            //todo remove node printer
-                            sb.AppendLine($"Dependency Tree from node {className}", ConsoleColor.Cyan);
-                            sb.Append(NodePrinter.PrintDependencyTreeForProject(classNode, project));
-                            sb.AppendLine($"Consumer Tree from nose {className}", ConsoleColor.Cyan);
-                            sb.Append(NodePrinter.PrintConsumerTreeForProject(classNode, project));
-                        }
-                    }
-                    else
-                    {
-                        sb.AppendLine($"Lifetime Violations for Graph", ConsoleColor.Cyan);
-                        var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
-
-                        if (allControllers)
-                        {
-                            relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
-                        }
-
-                        SearchForLifetimeViolations(relevantNodes, sb);
-                    }
-
-                    return sb;
-                }
-
-                public void SearchForLifetimeViolations(IEnumerable<DependencyNode> searchNodes, ColoredStringBuilder sb)
-                {
-                    var issues = new List<DependencyMismatch>();
-                    foreach (var node in searchNodes)
-                    {
-                        foreach (var (project, registration) in node.RegistrationInfo)
-                        {
-                            foreach (var dependantReference in node.DependedOnBy)
-                            {
-                                if (!dependantReference.RegistrationInfo.TryGetValue(project, out var dependantRegistration)) continue;
-
-                                if (dependantRegistration.Lifetime > registration.Lifetime)
-                                {
-                                    sb.AppendLine($"[{dependantRegistration.Lifetime}] {dependantReference.ClassName} -> [{registration.Lifetime}] {node.ClassName}\n", ConsoleColor.Red);
-                                    sb.AppendLine($"\tClass: {dependantReference.ClassName} has lifetime of {dependantRegistration.Lifetime}\n", ConsoleColor.Gray);
-                                    sb.AppendLine($"\tbut references shorter lived class: {node.ClassName} with lifetime {registration.Lifetime}", ConsoleColor.Gray);
-                                }
-                            }
-                        }
-                    }
-
-                    var projectIssueGroups = issues.OrderBy(x => x.DependantClass).GroupBy(x => x.Project);
-
-                    foreach (var projectIssues in projectIssueGroups)
-                    {
-                        var project = projectIssues.Key;
-                        sb.AppendLine($"Issues found in project {project}", ConsoleColor.Red);
-                        foreach (var issue in projectIssues)
-                        {
-                            sb.AppendLine($"\t{issue.ErrorMessage}", ConsoleColor.Gray);
-                        }
-                    }
-                }
         */
+
+        /*
+        public ColoredStringBuilder GenerateUnusedMethodsReport(string className, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+            var visited = new List<DependencyNode>();
+
+            if (!entireProject && !allControllers)
+            {
+                sb.AppendLine($"TODO UNUSED METHODS", ConsoleColor.Cyan);
+
+                var currentPath = new Stack<INamedTypeSymbol>();
+                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
+                if (classNode == null)
+                {
+                    sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
+                }
+                else
+                {
+                    TODO(classNode, project, currentPath, visited, sb);
+                }
+            }
+            else
+            {
+                sb.AppendLine($"TODO UNUSED METHODS", ConsoleColor.Cyan);
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                }
+
+                foreach (var node in relevantNodes)
+                {
+                    var currentPath = new Stack<INamedTypeSymbol>();
+                    TODO(node, project, currentPath, visited, sb);
+                }
+            }
+
+            return sb;
+        }
+
+        */
+
+
+        /*
+        public ColoredStringBuilder GenerateManualInstantiationReport(string className, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+            var visited = new List<DependencyNode>();
+
+            if (!entireProject && !allControllers)
+            {
+                sb.AppendLine($"TODO MANUAL INSTANTIATION", ConsoleColor.Cyan);
+
+                var currentPath = new Stack<INamedTypeSymbol>();
+                var classNode = dependencyGraph.Nodes.Where(x => x.ClassName == className && x.RegistrationInfo.ContainsKey(project)).FirstOrDefault();
+                if (classNode == null)
+                {
+                    sb.AppendLine($"{className} not registered in {project}", ConsoleColor.DarkMagenta);
+                }
+                else
+                {
+                    TODO(classNode, project, currentPath, visited, sb);
+                }
+            }
+            else
+            {
+                sb.AppendLine($"TODO MANUAL INSTANTIATION", ConsoleColor.Cyan);
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.RegistrationInfo.ContainsKey(project));
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.RegistrationInfo[project].Lifetime == LifetimeTypes.Controller);
+                }
+
+                foreach (var node in relevantNodes)
+                {
+                    var currentPath = new Stack<INamedTypeSymbol>();
+                    TODO(node, project, currentPath, visited, sb);
+                }
+            }
+
+            return sb;
+        }
+
+        */
+
+        public ColoredStringBuilder GenerateTreeReport(DependencyNode? startNode, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+            var visited = new List<DependencyNode>();
+
+            if (!entireProject && !allControllers)
+            {
+                //todo remove node printer
+                sb.AppendLine($"Dependency Tree from node {startNode.ClassName}", ConsoleColor.Cyan);
+                sb.Append(NodePrinter.PrintDependencyTreeForProject(startNode, project));
+                sb.AppendLine($"Consumer Tree from nose {startNode.ClassName}", ConsoleColor.Cyan);
+                sb.Append(NodePrinter.PrintConsumerTreeForProject(startNode, project));
+            }
+            else
+            {
+                sb.AppendLine($"Lifetime Violations for Graph", ConsoleColor.Cyan);
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.ProjectName == project);
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.Lifetime == LifetimeTypes.Controller);
+                }
+
+                SearchForLifetimeViolations(relevantNodes, sb);
+            }
+
+            return sb;
+        }
+
+        public void SearchForLifetimeViolations(IEnumerable<DependencyNode> searchNodes, ColoredStringBuilder sb)
+        {
+            var issues = new List<DependencyMismatch>();
+            foreach (var currentNode in searchNodes)
+            {
+                foreach (var dependantReference in currentNode.DependedOnBy)
+                {
+                    if (dependantReference.Lifetime > currentNode.Lifetime)
+                    {
+                        sb.AppendLine($"[{dependantReference.Lifetime}] {dependantReference.ClassName} -> [{currentNode.Lifetime}] {currentNode.ClassName}\n", ConsoleColor.Red);
+                        sb.AppendLine($"\tClass: {dependantReference.ClassName} has lifetime of {dependantReference.Lifetime}\n", ConsoleColor.Gray);
+                        sb.AppendLine($"\tbut references shorter lived class: {currentNode.ClassName} with lifetime {currentNode.Lifetime}", ConsoleColor.Gray);
+                    }
+                }
+            }
+
+            var projectIssueGroups = issues.OrderBy(x => x.DependantClass).GroupBy(x => x.Project);
+
+            foreach (var projectIssues in projectIssueGroups)
+            {
+                var project = projectIssues.Key;
+                sb.AppendLine($"Issues found in project {project}", ConsoleColor.Red);
+                foreach (var issue in projectIssues)
+                {
+                    sb.AppendLine($"\t{issue.ErrorMessage}", ConsoleColor.Gray);
+                }
+            }
+        }
+        private void TODO(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
+        {
+            //TODO stop referencing this
+        }
     }
 }
