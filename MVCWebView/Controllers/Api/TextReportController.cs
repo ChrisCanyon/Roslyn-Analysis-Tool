@@ -79,8 +79,8 @@ namespace MVCWebView.Controllers.Api
             ColoredStringBuilder? result = type switch
             {
                 "Tree" => _runner.GenerateTreeReport(node, project, entireProject, allControllers),
-                //"Cycles" => _runner.GenerateCycleReport(node, project, entireProject, allControllers),
-                //"ExcessiveDependencies" => _runner.GenerateExcessiveDependencies(node, project, entireProject, allControllers),
+                "Cycles" => _runner.GenerateCycleReport(node, project, entireProject, allControllers),
+                "ExcessiveDependencies" => _runner.GenerateExcessiveDependencies(node, project, entireProject, allControllers),
                 "ManualLifecycleManagement" => _runner.GenerateManualLifecycleManagementReport(node, project, entireProject, allControllers),
                 "UnusedMethods" => _runner.GenerateUnusedMethodsReport(node, project, entireProject, allControllers),
                 "ManualInstantiation" => _runner.GenerateManualInstantiationReport(node, project, entireProject, allControllers),
