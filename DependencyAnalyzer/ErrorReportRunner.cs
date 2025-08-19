@@ -18,7 +18,7 @@ namespace DependencyAnalyzer
             public string ErrorMessage;
         }
 
-        public ColoredStringBuilder GenerateCycleReport(DependencyNode startNode, string project, bool entireProject, bool allControllers)
+        public ColoredStringBuilder GenerateCycleReport(DependencyNode? startNode, string project, bool entireProject, bool allControllers)
         {
             var sb = new ColoredStringBuilder();
             var visited = new List<DependencyNode>();
@@ -192,6 +192,7 @@ namespace DependencyAnalyzer
                 resolveNotes.AppendLine($"\t{resolvedSymbol.InvocationPath}", ConsoleColor.White);
             }
 
+            //TODO for single nodes we need to check if anything that consumes the node is released
             var disposals = manualResolutionParser.ManuallyDisposedSymbols
                 .Where(x => node.SatisfiesDependency(x.Type) && node.ProjectName == x.Project).ToList();
 
@@ -234,7 +235,7 @@ namespace DependencyAnalyzer
 
             foreach (var dependency in node.DependsOn)
             {
-                ret = ret || FindSensitiveNodesInDependencyTree(node, path, visitedNodes, sb);
+                ret = FindSensitiveNodesInDependencyTree(dependency, path, visitedNodes, sb) || ret;
             }
 
             path.Pop();
