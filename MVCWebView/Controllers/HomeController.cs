@@ -1,8 +1,6 @@
 using DependencyAnalyzer.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.CodeAnalysis;
-using System.ComponentModel.DataAnnotations;
-using System.Diagnostics.CodeAnalysis;
 
 namespace MVCWebView.Controllers
 {

@@ -6,7 +6,7 @@ namespace DependencyAnalyzer.Parsers
 {
     public class DependencyAnalyzer : BaseParser
     {
-        private readonly Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> DependencyMap;
+        private readonly Dictionary<INamedTypeSymbol, List<RawDependency>> DependencyMap;
         private readonly SolutionAnalyzer SolutionAnalyzer;
         private readonly ManualResolutionParser ManualResolutionParser;
         public DependencyAnalyzer(SolutionAnalyzer solutionAnalyzer, ManualResolutionParser manualResolutionParser)
@@ -16,21 +16,20 @@ namespace DependencyAnalyzer.Parsers
             DependencyMap = GetClassDependencies();
         }
 
-        private Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> GetClassDependencies()
+        private Dictionary<INamedTypeSymbol, List<RawDependency>> GetClassDependencies()
         {
             var classSymbols = SolutionAnalyzer.AllTypes;
 
-            var comparer = new FullyQualifiedNameComparer();
-            var dependencyMap = new Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>>(comparer);
+            var dependencyMap = new Dictionary<INamedTypeSymbol, List<RawDependency>>(new FullyQualifiedNameComparer());
 
             foreach (var classSymbol in classSymbols)
             {
-                var dependencies = new List<INamedTypeSymbol>();
+                var dependencies = new List<RawDependency>();
 
                 dependencies.AddRange(GetDependenciesFromConstructors(classSymbol.Constructors));
                 dependencies.AddRange(GetManualResolvedDependenciesForClass(classSymbol));
 
-                dependencies = dependencies.Distinct(comparer).ToList();
+                dependencies = dependencies.Distinct(new RawDependencyComparer()).ToList();
 
                 dependencyMap[classSymbol] = dependencies;
             }
@@ -38,17 +37,17 @@ namespace DependencyAnalyzer.Parsers
             return dependencyMap;
         }
 
-        private IEnumerable<INamedTypeSymbol> GetManualResolvedDependenciesForClass(INamedTypeSymbol classSymbol)
+        private IEnumerable<RawDependency> GetManualResolvedDependenciesForClass(INamedTypeSymbol classSymbol)
         {
             var comparer = new FullyQualifiedNameComparer();
             return ManualResolutionParser.ManuallyResolvedSymbols
                 .Where(x => comparer.Equals(x.ContainingType, classSymbol))
-                .Select(x => x.Type);
+                .Select(x => RawDependency.FromManualResolution(x));
         }
 
-        private List<INamedTypeSymbol> GetDependenciesFromConstructors(IEnumerable<IMethodSymbol> constructors)
+        private List<RawDependency> GetDependenciesFromConstructors(IEnumerable<IMethodSymbol> constructors)
         {
-            var ret = new List<INamedTypeSymbol>();
+            var ret = new List<RawDependency>();
             foreach (var constructor in constructors)
             {
                 foreach (var parameter in constructor.Parameters)
@@ -57,7 +56,7 @@ namespace DependencyAnalyzer.Parsers
                     {
                         if (depType.Locations.Any(loc => loc.IsInSource))
                         {
-                            ret.Add(depType);
+                            ret.Add(RawDependency.FromConstructor(depType));
                         }
 
                         if (depType.IsGenericType)
@@ -69,13 +68,13 @@ namespace DependencyAnalyzer.Parsers
                                 {
                                     if (arg.Locations.Any(loc => loc.IsInSource))
                                     {
-                                        ret.Add(arg);
+                                        ret.Add(RawDependency.FromConstructor(arg));
                                     }
                                 }
                             }
                             else
                             {
-                                ret.Add(depType);
+                                ret.Add(RawDependency.FromConstructor(depType));
                             }
                         }
                     }
@@ -189,7 +188,7 @@ namespace DependencyAnalyzer.Parsers
                         //find all nodes that could satisfy the dependency
                         var dependencyNodes = nodes
                                         .Where(x => x.ProjectName == dependantNode.ProjectName &&
-                                                    x.SatisfiesDependency(dependencySymbol)
+                                                    x.SatisfiesDependency(dependencySymbol.Type)
                                         ).ToList();
 
                         dependantNode.DependsOn.AddRange(dependencyNodes);

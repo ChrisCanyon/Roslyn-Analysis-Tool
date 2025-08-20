@@ -1,9 +1,6 @@
 ﻿using DependencyAnalyzer;
 using DependencyAnalyzer.Models;
-using DependencyAnalyzer.Visualizers;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using System.Xml.Linq;
 
 namespace MVCWebView.Controllers.Api
 {

@@ -119,7 +119,12 @@ public abstract class BaseParser
                 IEnumerable<InvocationExpressionSyntax> installInvocations = FindInvocations(root, model, "Install", "Castle.Windsor.IWindsorContainer");
 
                 ret.AddRange(installInvocations.Select(invocation =>
-                                new InstallInvocationContext(invocation, model, project.Name))
+                                new InstallInvocationContext
+                                {
+                                    Invocation = invocation,
+                                    SemanticModel = model,
+                                    ProjectName = project.Name
+                                })
                 );
             }
         }

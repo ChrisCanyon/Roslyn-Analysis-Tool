@@ -3,31 +3,45 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DependencyAnalyzer.Parsers
 {
-    public enum ManualLifetimeInteractionKind
+    public enum ManualResolveUsage
     {
-        Resolve,
-        Dispose
+        Local,
+        Ambiguous,
+        Stored
     }
-    public record ManualLifetimeInteractionInfo(
-        INamedTypeSymbol Type, //the type disposed/resolved
-        INamedTypeSymbol ContainingType, //the class the dispose/resolve was contained in
-        string CodeSnippet,
-        string Project,
-        string InvocationPath,
-        ManualLifetimeInteractionKind Kind
-    );
 
-    record InvocationChainFromRoot(
-            INamedTypeSymbol RootClass,
-            IMethodSymbol RootMethod,
-            InvocationExpressionSyntax RootInvocation,
-            string Project,
-            string InvocationPath
-        );
+    public record ManualResolveInfo
+    {
+        public required INamedTypeSymbol ResolvedType { get; init; }
+        public required INamedTypeSymbol ContainingType { get; init; }
+        public required string CodeSnippet { get; init; }
+        public required string Project { get; init; }
+        public required string InvocationPath { get; init; }
+        public required ManualResolveUsage Usage { get; init; }
+    }
 
-    record InstallInvocationContext(
-            InvocationExpressionSyntax Invocation,
-            SemanticModel SemanticModel,
-            string ProjectName
-        );
+    public record ManualDisposeInfo
+    {
+        public required INamedTypeSymbol DisposedType { get; init; }
+        public required INamedTypeSymbol ContainingType { get; init; }
+        public required string CodeSnippet { get; init; }
+        public required string Project { get; init; }
+        public required string InvocationPath { get; init; }
+    }
+
+    public record InvocationChainFromRoot
+    {
+        public required INamedTypeSymbol RootClass { get; init; }
+        public required IMethodSymbol RootMethod { get; init; }
+        public required InvocationExpressionSyntax RootInvocation { get; init; }
+        public required string Project { get; init; }
+        public required string InvocationPath { get; init; }
+    }
+
+    public record InstallInvocationContext
+    {
+        public required InvocationExpressionSyntax Invocation { get; init; }
+        public required SemanticModel SemanticModel { get; init; }
+        public required string ProjectName { get; init; }
+    }
 }

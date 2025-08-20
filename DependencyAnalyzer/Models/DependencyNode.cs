@@ -12,7 +12,12 @@ namespace DependencyAnalyzer.Models
         public required string ClassName { get; set; }
         public List<DependencyNode> DependsOn { get; set; } = [];
         public List<DependencyNode> DependedOnBy { get; set; } = [];
-        public List<INamedTypeSymbol> RawDependencies { get; set; } = [];
+        public List<RawDependency> RawDependencies { get; set; } = [];
+
+        public RawDependency GetRawDependency(DependencyNode node)
+        {
+            return RawDependencies.First(x => node.SatisfiesDependency(x.Type));
+        }
 
         public bool SatisfiesDependency(INamedTypeSymbol requested)
         {
@@ -67,11 +72,11 @@ namespace DependencyAnalyzer.Models
 
             var ret = new List<INamedTypeSymbol>();
 
-            foreach (var dependency in RawDependencies)
+            foreach (var rawDep in RawDependencies)
             {
-                if (!DependsOn.Any(x => x.SatisfiesDependency(dependency)))
+                if (!DependsOn.Any(x => x.SatisfiesDependency(rawDep.Type)))
                 {
-                    ret.Add(dependency);
+                    ret.Add(rawDep.Type);
                 }
             }
 

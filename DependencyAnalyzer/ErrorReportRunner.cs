@@ -185,7 +185,7 @@ namespace DependencyAnalyzer
             path.Push(node.ImplementationType);
 
             var manualResolutions = manualResolutionParser.ManuallyResolvedSymbols
-                .Where(x => node.SatisfiesDependency(x.Type) && x.Project == node.ProjectName);
+                .Where(x => node.SatisfiesDependency(x.ResolvedType) && x.Project == node.ProjectName);
             foreach (var resolvedSymbol in manualResolutions)
             {
                 resolveNotes.AppendLine($"{node.ClassName} manual resolutions", ConsoleColor.Yellow);
@@ -194,7 +194,7 @@ namespace DependencyAnalyzer
 
             //TODO for single nodes we need to check if anything that consumes the node is released
             var disposals = manualResolutionParser.ManuallyDisposedSymbols
-                .Where(x => node.SatisfiesDependency(x.Type) && node.ProjectName == x.Project).ToList();
+                .Where(x => node.SatisfiesDependency(x.DisposedType) && node.ProjectName == x.Project).ToList();
 
             foreach (var disposedSymbol in disposals)
             {

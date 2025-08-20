@@ -2,6 +2,7 @@
 using DependencyAnalyzer.Models;
 using Microsoft.CodeAnalysis;
 using System.Diagnostics;
+using System.Reflection.Emit;
 using System.Text;
 
 namespace DependencyAnalyzer.Visualizers
@@ -143,7 +144,7 @@ namespace DependencyAnalyzer.Visualizers
                 return;
             }
 
-            if (visitedNodes.Any(x => x.ClassName == currentNode.ClassName && 
+            if (visitedNodes.Any(x => x.ClassName == currentNode.ClassName &&
                     x.ServiceInterface?.ToDisplayString() == currentNode.ServiceInterface?.ToDisplayString())) return;
 
             visitedNodes.Add(currentNode);
@@ -158,15 +159,7 @@ namespace DependencyAnalyzer.Visualizers
 
             foreach (var dependant in currentNode.DependedOnBy)
             {
-                string label = "";
-                if (dependant.Lifetime > currentNode.Lifetime)
-                {
-                    label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
-                }
-                else
-                {
-                    label = "[label=\"Valid\", color=green, fontcolor=green]";
-                }
+                string label = GenerateEdgeLabelForRelationship(currentNode, dependant);
 
                 CreateEdge(sb, dependant, currentNode, label);
             }
@@ -222,6 +215,38 @@ namespace DependencyAnalyzer.Visualizers
             return sb.ToString();
         }
 
+        private static string GenerateEdgeLabelForRelationship(DependencyNode dependency, DependencyNode dependant)
+        {
+            var rawDep = dependant.GetRawDependency(dependency);
+            // Normal constructor injection
+            if (rawDep.Source == DependencySource.Constructor)
+            {
+                if (dependency.Lifetime < dependant.Lifetime)
+                    return "[label=\"❌ Captive (Constructor)\", color=red, fontcolor=red]";
+
+                return "[label=\"Constructor\", color=green, fontcolor=green]";
+            }
+
+            // Manual resolve -> stored in a field
+            if (rawDep.Source == DependencySource.Manual_Stored)
+            {
+                if (dependency.Lifetime < dependant.Lifetime)
+                    return "[label=\"❌ Captive (Manual)\", color=red, fontcolor=red]";
+
+                return "[label=\"Manual Stored\", color=yellow, fontcolor=yellow]";
+            }
+
+            // Manual resolve -> local use
+            if (rawDep.Source == DependencySource.Manual_Local)
+            {
+                return "[label=\"Manual Local\", color=green, fontcolor=green]";
+            }
+
+            // Manual resolve -> passed to another method (unknown usage)
+            // rawDep.Source == DependencySource.Manual_Ambiguous
+            return "[label=\"Manual Ambiguous\", color=orange, fontcolor=orange]";
+        }
+
         //this is called for every node in a project
         private static void ProcessSingleNode(DependencyNode currentMode, StringBuilder sb)
         {
@@ -230,17 +255,7 @@ namespace DependencyAnalyzer.Visualizers
 
             foreach (var dependency in currentMode.DependsOn)
             {
-                string label;
-
-                if (dependency.Lifetime < currentMode.Lifetime)
-                {
-                    label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
-                }
-                else
-                {
-                    label = "[color=green, fontcolor=green]";
-                }
-
+                string label = GenerateEdgeLabelForRelationship(dependency, currentMode);
                 //only create edge. the node will be created in subsequent calls to this method
                 CreateEdge(sb, currentMode, dependency, label);
             }
@@ -300,16 +315,7 @@ namespace DependencyAnalyzer.Visualizers
             foreach (var dependency in currentNode.DependsOn)
             {
                 TraverseDependencyGraph(dependency, path, visitedNodes, sb);
-                string label;
-
-                if (dependency.Lifetime < currentNode.Lifetime)
-                {
-                    label = "[label=\"❌ Invalid\", color=red, fontcolor=red]";
-                }
-                else
-                {
-                    label = "[label=\"Valid\", color=green, fontcolor=green]";
-                }
+                string label = GenerateEdgeLabelForRelationship(dependency, currentNode);
 
                 CreateEdge(sb, currentNode, dependency, label);
             }

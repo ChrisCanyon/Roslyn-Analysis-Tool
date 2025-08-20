@@ -9,8 +9,8 @@ namespace DependencyAnalyzer.Parsers
 {
     public class ManualResolutionParser(Solution solution, SolutionAnalyzer solutionAnalyzer) : BaseParser
     {
-        public List<ManualLifetimeInteractionInfo> ManuallyResolvedSymbols;
-        public List<ManualLifetimeInteractionInfo> ManuallyDisposedSymbols;
+        public List<ManualResolveInfo> ManuallyResolvedSymbols;
+        public List<ManualDisposeInfo> ManuallyDisposedSymbols;
 
         public async Task Build()
         {
@@ -18,8 +18,8 @@ namespace DependencyAnalyzer.Parsers
             ManuallyDisposedSymbols = await FindAllManuallyDisposedSymbols();
         }
 
-        private async Task<IMethodSymbol?> GetMethodFromString(string methodName, string fullyQualifiedTypeName) {
-            IMethodSymbol? methodSymbol = null;
+        private async Task<List<IMethodSymbol>> GetMethodsFromString(string methodName, string fullyQualifiedTypeName) {
+            var ret = new List<IMethodSymbol>();
 
             // Search all projects for the declaring type
             foreach (var project in solution.Projects)
@@ -30,25 +30,37 @@ namespace DependencyAnalyzer.Parsers
                 var typeSymbol = compilation.GetTypeByMetadataName(fullyQualifiedTypeName);
                 if (typeSymbol == null) continue;
 
-                methodSymbol = typeSymbol
+                ret.AddRange(typeSymbol
                     .GetMembers(methodName)
-                    .OfType<IMethodSymbol>()
-                    .FirstOrDefault();
-
-                if (methodSymbol != null)
-                    break;
+                    .OfType<IMethodSymbol>());
             }
 
-            if (methodSymbol == null)
+            if (ret.Count == 0)
             {
                 Console.WriteLine($"[WARN] Could not resolve method {fullyQualifiedTypeName}.{methodName}. No references in solution");
             }
-            return methodSymbol;
+
+            //dedupe
+            ret = ret.GroupBy(m => $"{m.ContainingAssembly.Identity}_{m.ToDisplayString()}")
+                    .Select(g => g.First())
+                    .ToList();
+
+            return ret;
         }
 
-        private async Task<List<ManualLifetimeInteractionInfo>> FindAllManuallyDisposedSymbols()
+        private async Task<IEnumerable<ReferencedSymbol>> FindAllReferences(IEnumerable<IMethodSymbol> methods)
         {
-            var ret = new List<ManualLifetimeInteractionInfo>();
+            var ret = new List<ReferencedSymbol>();
+            foreach (var method in methods)
+            {
+                ret.AddRange(await SymbolFinder.FindReferencesAsync(method, solution));
+            }
+            return ret;
+        }
+
+        private async Task<List<ManualDisposeInfo>> FindAllManuallyDisposedSymbols()
+        {
+            var ret = new List<ManualDisposeInfo>();
 
             var resolveTargets = new[]
             {
@@ -58,94 +70,95 @@ namespace DependencyAnalyzer.Parsers
             };
             var comparer = new FullyQualifiedNameComparer();
 
+            List<IMethodSymbol> methods = new List<IMethodSymbol>();
             foreach (var (methodName, fullyQualifiedTypeName) in resolveTargets)
             {
-                var targetMethod = await GetMethodFromString(methodName, fullyQualifiedTypeName);
-                if (targetMethod == null) continue;
+                methods.AddRange(await GetMethodsFromString(methodName, fullyQualifiedTypeName));
+            }
+            var disposeReferences = await FindAllReferences(methods);
 
-                var disposeReferences = await SymbolFinder.FindReferencesAsync(targetMethod, solution);
-                var disposeReferenceLocations = disposeReferences
-                    .SelectMany(r => r.Locations)
-                    .Select(l => l.Location)
-                    .Where(l => l.IsInSource)
-                    .DistinctBy(l => (l.SourceTree?.FilePath, l.SourceSpan.Start));
+            var disposeReferenceLocations = disposeReferences
+                .SelectMany(r => r.Locations)
+                .Select(l => l.Location)
+                .Where(l => l.IsInSource)
+                .DistinctBy(l => (l.SourceTree?.FilePath, l.SourceSpan.Start));
 
-                foreach (var location in disposeReferenceLocations)
-                {
-                    var sourceTree = location.SourceTree;
-                    var span = location.SourceSpan;
-                    var root = await sourceTree.GetRootAsync();
+            foreach (var location in disposeReferenceLocations)
+            {
+                var sourceTree = location.SourceTree;
+                var span = location.SourceSpan;
+                var root = await sourceTree.GetRootAsync();
 
-                    var node = root.FindNode(span);
+                var node = root.FindNode(span);
 
-                    var disposeInvocation = node.FirstAncestorOrSelf<InvocationExpressionSyntax>();
+                var disposeInvocation = node.FirstAncestorOrSelf<InvocationExpressionSyntax>();
 
-                    if (disposeInvocation == null) continue;
+                if (disposeInvocation == null) continue;
 
-                    var document = solution.GetDocument(sourceTree);
-                    if (document == null) continue;
+                var document = solution.GetDocument(sourceTree);
+                if (document == null) continue;
 
-                    var model = await document.GetSemanticModelAsync();
-                    if (model == null) continue;
+                var model = await document.GetSemanticModelAsync();
+                if (model == null) continue;
 
-                    var disposedClass = GetDisposedClass(disposeInvocation, model);
-                    if (disposedClass == null || !solutionAnalyzer.AllTypes.Any(x => comparer.Equals(x, disposedClass))) continue;
+                var disposedClass = GetDisposedClass(disposeInvocation, model);
+                if (disposedClass == null || !solutionAnalyzer.AllTypes.Any(x => comparer.Equals(x, disposedClass))) continue;
 
-                    if (IsIgnoredClassType(disposeInvocation, model)) continue;
+                if (IsIgnoredClassType(disposeInvocation, model)) continue;
 
-                    var disposeCallContainingMethodDecl = disposeInvocation.Ancestors()
-                        .OfType<MethodDeclarationSyntax>()
-                        .FirstOrDefault();
-                    if (disposeCallContainingMethodDecl == null) continue;
-
-                    var disposeCallContainingMethod = model.GetDeclaredSymbol(disposeCallContainingMethodDecl) as IMethodSymbol;
-                    if (disposeCallContainingMethod == null) continue;
-
-                    var disposeCallContainingClassDecl = disposeInvocation.Ancestors()
-                    .OfType<ClassDeclarationSyntax>()
+                var disposeCallContainingMethodDecl = disposeInvocation.Ancestors()
+                    .OfType<MethodDeclarationSyntax>()
                     .FirstOrDefault();
-                    if (disposeCallContainingClassDecl == null) continue;
+                if (disposeCallContainingMethodDecl == null) continue;
 
-                    var disposeCallContainingClass = model.GetDeclaredSymbol(disposeCallContainingClassDecl) as INamedTypeSymbol;
-                    if (disposeCallContainingClass == null) continue;
+                var disposeCallContainingMethod = model.GetDeclaredSymbol(disposeCallContainingMethodDecl) as IMethodSymbol;
+                if (disposeCallContainingMethod == null) continue;
 
-                    //Sometimes top level is root
-                    //ie factory method lambda
-                    if (IsRootMethodInovcation(disposeCallContainingClass))
+                var disposeCallContainingClassDecl = disposeInvocation.Ancestors()
+                .OfType<ClassDeclarationSyntax>()
+                .FirstOrDefault();
+                if (disposeCallContainingClassDecl == null) continue;
+
+                var disposeCallContainingClass = model.GetDeclaredSymbol(disposeCallContainingClassDecl) as INamedTypeSymbol;
+                if (disposeCallContainingClass == null) continue;
+
+                //Sometimes top level is root
+                //ie factory method lambda
+                if (IsRootMethodInovcation(disposeCallContainingClass))
+                {
+                    string callPath = $"{disposeCallContainingMethod.ToDisplayString()} -> " + disposeInvocation.ToFullString();
+                    var invocationRoot = new InvocationChainFromRoot
                     {
-                        string callPath = $"{disposeCallContainingMethod.ToDisplayString()} -> " + disposeInvocation.ToFullString();
-                        var invocationRoot = new InvocationChainFromRoot(
-                            disposeCallContainingClass,
-                            disposeCallContainingMethod,
-                            disposeInvocation,
-                            document.Project.Name,
-                            callPath
-                            );
+                        RootClass = disposeCallContainingClass,
+                        RootMethod = disposeCallContainingMethod,
+                        RootInvocation = disposeInvocation,
+                        Project = document.Project.Name,
+                        InvocationPath = callPath
+                    };
 
-                        ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, [invocationRoot], model, solution));
-                    }
-                    else
+                    ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, [invocationRoot], model, solution));
+                }
+                else
+                {
+                    var visited = new List<IMethodSymbol>();
+                    var currentPath = new Stack<string>();
+                    var rootInvocations = await WalkInvocationChain(disposeCallContainingMethod, solution, currentPath, visited);
+
+                    if (rootInvocations.Count() == 0)
                     {
-                        var visited = new List<IMethodSymbol>();
-                        var currentPath = new Stack<string>();
-                        var rootInvocations = await WalkInvocationChain(disposeCallContainingMethod, solution, currentPath, visited);
-
-                        if (rootInvocations.Count() == 0)
-                        {
-                            Console.WriteLine($"Unable to determine root invocation of {disposeCallContainingMethod.ToDisplayString()}:{disposeInvocation.ToFullString()}", ConsoleColor.Cyan);
-                        }
-
-                        ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, rootInvocations, model, solution));
+                        Console.WriteLine($"Unable to determine root invocation of {disposeCallContainingMethod.ToDisplayString()}:{disposeInvocation.ToFullString()}", ConsoleColor.Cyan);
                     }
+
+                    ret.AddRange(await GenerateDisposalInfos(disposedClass, disposeInvocation, rootInvocations, model, solution));
                 }
             }
 
             return ret;
         }
 
-        private async Task<List<ManualLifetimeInteractionInfo>> GenerateDisposalInfos(INamedTypeSymbol disposedClass, InvocationExpressionSyntax disposeInvocation, List<InvocationChainFromRoot> rootInvocations, SemanticModel model, Solution solution)
+        private async Task<List<ManualDisposeInfo>> GenerateDisposalInfos(INamedTypeSymbol disposedClass, InvocationExpressionSyntax disposeInvocation, List<InvocationChainFromRoot> rootInvocations, SemanticModel model, Solution solution)
         {
-            var ret = new List<ManualLifetimeInteractionInfo>();
+            var ret = new List<ManualDisposeInfo>();
 
             var typeDecl = disposeInvocation.FirstAncestorOrSelf<TypeDeclarationSyntax>();
             var containingType = typeDecl != null
@@ -164,24 +177,24 @@ namespace DependencyAnalyzer.Parsers
                     var projects = await FindInstallerReferencesAsync(solution, rootInvocation.RootClass);
                     foreach (var project in projects)
                     {
-                        ret.Add(new ManualLifetimeInteractionInfo(
-                            disposedClass,
-                            containingType,
-                            disposeInvocation.ToFullString(),
-                            project,
-                            rootInvocation.InvocationPath,
-                            ManualLifetimeInteractionKind.Dispose
-                        ));
+                        ret.Add(new ManualDisposeInfo
+                        {
+                            DisposedType = disposedClass,
+                            ContainingType = containingType,
+                            CodeSnippet = disposeInvocation.ToFullString(),
+                            Project = project,
+                            InvocationPath = rootInvocation.InvocationPath
+                        });
                     }
                 }
-                ret.Add(new ManualLifetimeInteractionInfo(
-                    disposedClass,
-                    containingType,
-                    disposeInvocation.ToFullString(),
-                    rootInvocation.Project,
-                    rootInvocation.InvocationPath,
-                    ManualLifetimeInteractionKind.Dispose
-                ));
+                ret.Add(new ManualDisposeInfo
+                {
+                    DisposedType = disposedClass,
+                    ContainingType = containingType,
+                    CodeSnippet = disposeInvocation.ToFullString(),
+                    Project = rootInvocation.Project,
+                    InvocationPath = rootInvocation.InvocationPath
+                });
             }
 
             return ret;
@@ -237,13 +250,14 @@ namespace DependencyAnalyzer.Parsers
                     if (IsRootMethodInovcation(classSymbol))
                     {
                         string callPath = $"{referencedFromMethod.ToDisplayString()} -> " + string.Join(" -> ", path);
-                        ret.Add(new InvocationChainFromRoot(
-                            classSymbol,
-                            referencedFromMethod,
-                            invocation,
-                            document.Project.Name,
-                            callPath
-                            ));
+                        ret.Add(new InvocationChainFromRoot
+                        {
+                            RootClass = classSymbol,
+                            RootMethod = referencedFromMethod,
+                            RootInvocation = invocation,
+                            Project = document.Project.Name,
+                            InvocationPath = callPath
+                        });
                     }
                     else
                     {
@@ -307,9 +321,9 @@ namespace DependencyAnalyzer.Parsers
             return null;
         }
 
-        public async Task<List<ManualLifetimeInteractionInfo>> FindAllManuallyResolvedSymbols()
+        public async Task<List<ManualResolveInfo>> FindAllManuallyResolvedSymbols()
         {
-            var ret = new List<ManualLifetimeInteractionInfo> { };
+            var ret = new List<ManualResolveInfo> { };
 
             var resolveTargets = new[]
                 {
@@ -338,38 +352,36 @@ namespace DependencyAnalyzer.Parsers
                     ("ResolveAll", "Castle.Windsor.IWindsorContainer")
                 };
 
+            List<IMethodSymbol> methods = new List<IMethodSymbol>();
             foreach (var (methodName, fullyQualifiedTypeName) in resolveTargets)
             {
-                var method = await GetMethodFromString(methodName, fullyQualifiedTypeName);
+                methods.AddRange(await GetMethodsFromString(methodName, fullyQualifiedTypeName));
+            }
+            var resolveReferences = await FindAllReferences(methods);
 
-                if (method == null) continue;
-
-                var references = await SymbolFinder.FindReferencesAsync(method, solution);
-
-                foreach (var reference in references)
+            foreach (var reference in resolveReferences)
+            {
+                foreach (var location in reference.Locations)
                 {
-                    foreach (var location in reference.Locations)
-                    {
-                        var sourceTree = location.Location.SourceTree;
-                        var span = location.Location.SourceSpan;
-                        var root = await sourceTree.GetRootAsync();
+                    var sourceTree = location.Location.SourceTree;
+                    var span = location.Location.SourceSpan;
+                    var root = await sourceTree.GetRootAsync();
 
-                        var node = root.FindNode(span);
+                    var node = root.FindNode(span);
 
-                        var invocation = node.FirstAncestorOrSelf<InvocationExpressionSyntax>();
+                    var invocation = node.FirstAncestorOrSelf<InvocationExpressionSyntax>();
 
-                        if (invocation == null) continue;
+                    if (invocation == null) continue;
 
-                        var document = solution.GetDocument(sourceTree);
-                        if (document == null) continue;
+                    var document = solution.GetDocument(sourceTree);
+                    if (document == null) continue;
 
-                        var model = await document.GetSemanticModelAsync();
-                        if (model == null) continue;
+                    var model = await document.GetSemanticModelAsync();
+                    if (model == null) continue;
 
-                        //if (IsIgnoredClassType(invocation, model)) continue;
+                    if (IsIgnoredClassType(invocation, model)) continue;
 
-                        ret.AddRange(GetResolutionInfoFromInvocations(new[] { invocation }, model, document.Project.Name, document.Name));
-                    }
+                    ret.AddRange(GetResolutionInfoFromInvocations(invocation, model, document.Project.Name, document.Name));
                 }
             }
             return ret;
@@ -395,46 +407,82 @@ namespace DependencyAnalyzer.Parsers
             return false;
         }
 
-        private static List<ManualLifetimeInteractionInfo> GetResolutionInfoFromInvocations(IEnumerable<InvocationExpressionSyntax> invocations, SemanticModel model, string project, string file)
+        private static List<ManualResolveInfo> GetResolutionInfoFromInvocations(InvocationExpressionSyntax invocation, SemanticModel model, string project, string file)
         {
-            var ret = new List<ManualLifetimeInteractionInfo>();
-            foreach (var invocation in invocations)
+            var ret = new List<ManualResolveInfo>();
+            var typeDecl = invocation.FirstAncestorOrSelf<TypeDeclarationSyntax>();
+            var containingType = typeDecl != null
+                ? model.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol
+                : null;
+            if (containingType == null)
             {
-                var typeDecl = invocation.FirstAncestorOrSelf<TypeDeclarationSyntax>();
-                var containingType = typeDecl != null
-                    ? model.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol
-                    : null;
-                if (containingType == null)
-                {
-                    Console.WriteLine($"Could not find containing class for {invocation.ToFullString()}");
-                }
+                Console.WriteLine($"Could not find containing class for {invocation.ToFullString()}");
+            }
 
-                foreach (var resolvedType in GetTypeArgumentsFromInvocation(invocation, model))
+            foreach (var resolvedType in GetTypeArgumentsFromInvocation(invocation, model))
+            {
+                ret.Add(new ManualResolveInfo
                 {
-                    ret.Add(new ManualLifetimeInteractionInfo(
-                        resolvedType,
-                        containingType,
-                        project,
-                        file,
-                        invocation.ToFullString().Trim(),
-                        ManualLifetimeInteractionKind.Resolve
-                    ));
-                }
-                foreach (var resolvedType in GetTypeArgumentsFromInvocationArguments(invocation, model))
+                    ResolvedType = resolvedType,
+                    ContainingType = containingType,
+                    Project = project,
+                    InvocationPath = file,
+                    CodeSnippet = invocation.ToFullString().Trim(),
+                    Usage = GetUsageFromResolveInvocation(invocation, model)
+                });
+            }
+            foreach (var resolvedType in GetTypeArgumentsFromInvocationArguments(invocation, model))
+            {
+                ret.Add(new ManualResolveInfo
                 {
-                    ret.Add(new ManualLifetimeInteractionInfo(
-                        resolvedType,
-                        containingType,
-                        project,
-                        file,
-                        invocation.ToFullString().Trim(),
-                        ManualLifetimeInteractionKind.Resolve
-                    ));
-                }
+                    ResolvedType = resolvedType,
+                    ContainingType = containingType,
+                    Project = project,
+                    InvocationPath = file,
+                    CodeSnippet = invocation.ToFullString().Trim(),
+                    Usage = GetUsageFromResolveInvocation(invocation, model)
+                });
             }
 
             return ret;
         }
 
+        private static ManualResolveUsage GetUsageFromResolveInvocation(InvocationExpressionSyntax resolveCall, SemanticModel model)
+        {
+            ManualResolveUsage type;
+            var targetSymbol = GetAssignmentTargetSymbol(resolveCall, model);
+            if (targetSymbol != null && 
+                (targetSymbol is IFieldSymbol || 
+                targetSymbol is IPropertySymbol))
+            {
+                return ManualResolveUsage.Stored;
+            }
+            else if (resolveCall.Parent is ArgumentSyntax)
+            {
+                return ManualResolveUsage.Ambiguous;
+            }
+            
+            return ManualResolveUsage.Local;
+        }
+
+        private static ISymbol? GetAssignmentTargetSymbol(InvocationExpressionSyntax resolveCall, SemanticModel semanticModel)
+        {
+            var parent = resolveCall.Parent;
+
+            // Case: var x = container.Resolve<T>();
+            if (parent is VariableDeclaratorSyntax variableDeclarator)
+            {
+                return semanticModel.GetDeclaredSymbol(variableDeclarator);
+            }
+
+            // Case: _field = container.Resolve<T>();
+            if (parent is AssignmentExpressionSyntax assignment)
+            {
+                return semanticModel.GetSymbolInfo(assignment.Left).Symbol;
+            }
+
+            // Inline use or passed as argument
+            return null;
+        }
     }
 }
