@@ -188,7 +188,7 @@ namespace DependencyAnalyzer.Parsers
                             CodeSnippet = disposeInvocation.ToFullString(),
                             Project = project,
                             FileAndLine = fileAndLine,
-                            InvocationPath = $"{rootInvocation.InvocationPath} -> {disposeInvocation.ToFullString()}"
+                            InvocationPath = $"{rootInvocation.InvocationPath} -> {disposeInvocation.ToFullString().Trim()}"
                         });
                     }
                 }
@@ -199,7 +199,7 @@ namespace DependencyAnalyzer.Parsers
                     CodeSnippet = disposeInvocation.ToFullString(),
                     Project = rootInvocation.Project,
                     FileAndLine = fileAndLine,
-                    InvocationPath = $"{rootInvocation.InvocationPath} -> {disposeInvocation.ToFullString()}"
+                    InvocationPath = $"{rootInvocation.InvocationPath} -> {disposeInvocation.ToFullString().Trim()}"
                 });
             }
 

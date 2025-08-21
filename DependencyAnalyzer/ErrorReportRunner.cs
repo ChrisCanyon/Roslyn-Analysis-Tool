@@ -184,7 +184,7 @@ namespace DependencyAnalyzer
                         sb.Append($"{step.Name} <- ", ConsoleColor.White);
                     }
                 }
-                sb.AppendLine("", ConsoleColor.Black);
+                sb.AppendLine("\n", ConsoleColor.Black);
                 return;
             }
             if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
@@ -318,7 +318,7 @@ namespace DependencyAnalyzer
                 
                 if (FindSensitiveNodesInDependencyTree(node, new Stack<INamedTypeSymbol>(), new List<DependencyNode>(), disposeNotes))
                 {
-                    disposeNotes.AppendLine($"\t{disposalInfo.InvocationPath}", ConsoleColor.Red);
+                    disposeNotes.AppendLine($"Invocation Path:\n{disposalInfo.InvocationPath}", ConsoleColor.Red);
                 }
             }
 
@@ -340,21 +340,27 @@ namespace DependencyAnalyzer
             visitedNodes.Add(node);
             path.Push(node.ImplementationType);
 
-            bool ret = false;
-
-            if (node.Lifetime == LifetimeTypes.PerWebRequest)
+            if(node.Lifetime == LifetimeTypes.PerWebRequest)
             {
                 sb.AppendLine($"\t[{node.Lifetime}]{node.ClassName} released downstream", ConsoleColor.Red);
-                ret = true;
+
+            }
+            else if(node.Lifetime == LifetimeTypes.Transient)
+            {
+                sb.AppendLine($"\t[{node.Lifetime}]{node.ClassName} released downstream", ConsoleColor.DarkYellow);
+            }
+            else
+            {
+                sb.AppendLine($"\t[{node.Lifetime}]{node.ClassName} released downstream", ConsoleColor.Magenta);
             }
 
             foreach (var dependency in node.DependsOn)
             {
-                ret = FindSensitiveNodesInDependencyTree(dependency, path, visitedNodes, sb) || ret;
+                FindSensitiveNodesInDependencyTree(dependency, path, visitedNodes, sb);
             }
 
             path.Pop();
-            return ret;
+            return true;
         }
 
         public ColoredStringBuilder GenerateUnusedMethodsReport(DependencyNode? startNode, string project, bool entireProject, bool allControllers)
