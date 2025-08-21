@@ -1,8 +1,9 @@
 ﻿using DependencyAnalyzer.Comparers;
+using DependencyAnalyzer.Extensions;
 using DependencyAnalyzer.Models;
 using Microsoft.CodeAnalysis;
 using System.Diagnostics;
-using System.Reflection.Emit;
+using System.Drawing;
 using System.Text;
 
 namespace DependencyAnalyzer.Visualizers
@@ -233,7 +234,7 @@ namespace DependencyAnalyzer.Visualizers
                 if (dependency.Lifetime < dependant.Lifetime)
                     return "[label=\"❌ Captive (Manual)\", color=red, fontcolor=red]";
 
-                return "[label=\"Manual Stored\", color=yellow, fontcolor=yellow]";
+                return "[label=\"Manual Stored\", color=green, fontcolor=yellow]";
             }
 
             // Manual resolve -> local use
@@ -378,9 +379,17 @@ namespace DependencyAnalyzer.Visualizers
 
             sb.AppendLine($"\"{nodeId}\"" +
                         $"[label=\"{nodeLabel}\"," +
-                        $" color={GetBackgroundColorForLifetime(lifetime)}," +
+                        $" fillcolor={GetBackgroundColorForLifetime(lifetime)}," +
                         $" fontcolor={GetTextColorForLifetime(lifetime)}," +
+                        $" {GetBorderStyleForStatefulness(node)}," +
                         $" style=filled];");
+        }
+
+        private static string GetBorderStyleForStatefulness(DependencyNode node)
+        {
+            if (node.IsPotentiallyStateful())
+                return "color=orange, penwidth=4";   // thick red border
+            return "color=black, penwidth=1";     // normal thin border
         }
 
         private static string GetIdFromNode(DependencyNode node)

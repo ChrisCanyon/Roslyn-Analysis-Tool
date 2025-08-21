@@ -115,7 +115,7 @@ namespace DependencyAnalyzer.Parsers.Windsor
                                             registration.Select(incompleteRegistration =>
                                             new RegistrationInfo
                                             {
-                                                ServiceInterface = incompleteRegistration.ServiceInterface,
+                                                ServiceType = incompleteRegistration.ServiceType,
                                                 ImplementationType = incompleteRegistration.ImplementationType,
                                                 Lifetime = incompleteRegistration.Lifetime,
                                                 ProjectName = calledProject,
@@ -252,23 +252,23 @@ namespace DependencyAnalyzer.Parsers.Windsor
             //go through each type argument
             foreach(INamedTypeSymbol type in registeredTypes)
             {
-                if(type.TypeKind == TypeKind.Interface)
-                {
+                //if(type.TypeKind == TypeKind.Interface)
+                //{
                     ret.Add(new RegistrationInfo
                     {
-                        ServiceInterface = type,
+                        ServiceType = type,
                         ImplementationType = null,
                         Lifetime = lifestyle,
                         ProjectName = projectName,
                         UnresolvableImplementation = true, //this indicates upstream to connect all implementations together
                         IsFactoryResolved = true //this indicates upstream to connect all implementations together
                     });
-                }
-                else
-                {
-                    Console.WriteLine("Non interace passed into Based On registration");
-                    Console.WriteLine($"expression: {basesOnExpression.ToFullString()}");
-                }
+                //}
+                //else
+                //{
+                //    Console.WriteLine("Non interace passed into Based On registration");
+                //    Console.WriteLine($"expression: {basesOnExpression.ToFullString()}");
+                //}
             }
 
             return ret;
@@ -374,7 +374,7 @@ namespace DependencyAnalyzer.Parsers.Windsor
             {
                 ret.Add(new RegistrationInfo
                 {
-                    ServiceInterface = registeredInterface,
+                    ServiceType = registeredInterface,
                     ImplementationType = null,
                     Lifetime = regType,
                     ProjectName = projectName,
@@ -394,7 +394,7 @@ namespace DependencyAnalyzer.Parsers.Windsor
                 }
                 ret.Add(new RegistrationInfo
                 {
-                    ServiceInterface = registeredInterface,
+                    ServiceType = registeredInterface,
                     ImplementationType = impType,
                     Lifetime = regType,
                     ProjectName = projectName,
@@ -411,7 +411,7 @@ namespace DependencyAnalyzer.Parsers.Windsor
             var implStrat = GetImplementationStrategy(componentForExpression, model);
             return new RegistrationInfo
             {
-                ServiceInterface = null,
+                ServiceType = null,
                 ImplementationType = registeredClass,
                 Lifetime = regType,
                 ProjectName = projectName,

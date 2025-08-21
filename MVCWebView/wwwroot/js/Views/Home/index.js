@@ -8,16 +8,6 @@
     loadSingleClassSvg();
 } 
 
-document.addEventListener("DOMContentLoaded", () => {
-    /*const input = document.getElementById("classInput");
-    console.log("adding listener");
-    input.addEventListener("input", (event) => {
-        el = event.target;
-        const length = Math.max(el.value.length, 25);
-        el.style.setProperty("width", `${length}ch`, "important");
-    });*/
-});
-
 async function loadPrevious() {
     if (historyStack.length < 2) {
         console.warn("No previous view.");
@@ -115,6 +105,7 @@ async function loadAllControllers() {
 async function loadTextReports() {
     fetchTextReport("Tree", "output-lifetime-violations");
     fetchTextReport("Cycles", "output-cycles");
+    fetchTextReport("StatefulServices", "output-stateful-report");
     fetchTextReport("ExcessiveDependencies", "output-excessive-deps");
     fetchTextReport("ManualLifecycleManagement", "output-manual-lifestyle");
     fetchTextReport("UnusedMethods", "output-unused-methods");

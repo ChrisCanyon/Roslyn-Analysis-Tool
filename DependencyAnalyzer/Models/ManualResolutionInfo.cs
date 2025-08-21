@@ -25,6 +25,7 @@ namespace DependencyAnalyzer.Parsers
         public required INamedTypeSymbol DisposedType { get; init; }
         public required INamedTypeSymbol ContainingType { get; init; }
         public required string CodeSnippet { get; init; }
+        public required string FileAndLine { get; init; }
         public required string Project { get; init; }
         public required string InvocationPath { get; init; }
     }

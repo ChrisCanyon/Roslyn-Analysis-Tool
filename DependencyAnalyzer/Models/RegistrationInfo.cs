@@ -5,7 +5,7 @@ namespace DependencyAnalyzer.Models
     public class RegistrationInfo
     {
         public INamedTypeSymbol? ImplementationType { get; set; }
-        public INamedTypeSymbol? ServiceInterface { get; set; }
+        public INamedTypeSymbol? ServiceType { get; set; }
         public required string ProjectName { get; set; }
         public LifetimeTypes Lifetime { get; set; }
         public bool IsFactoryResolved { get; set; } = false;

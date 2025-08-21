@@ -1,4 +1,5 @@
 ﻿using DependencyAnalyzer.Comparers;
+using DependencyAnalyzer.Extensions;
 using DependencyAnalyzer.Models;
 using Microsoft.CodeAnalysis;
 
@@ -36,7 +37,7 @@ namespace DependencyAnalyzer.Parsers
 
             return dependencyMap;
         }
-
+       
         private IEnumerable<RawDependency> GetManualResolvedDependenciesForClass(INamedTypeSymbol classSymbol)
         {
             var comparer = new FullyQualifiedNameComparer();
@@ -131,7 +132,7 @@ namespace DependencyAnalyzer.Parsers
             // so each (impl, service) pair will produce its own node in the dependency graph.
             var regiGroups = allRegistrations.GroupBy(x => (
                         x.ImplementationType,
-                        x.ServiceInterface,
+                        ServiceInterface:x.ServiceType,
                         x.ProjectName,
                         x.Lifetime
             ), new RegInfoKeyComparer());
@@ -143,7 +144,7 @@ namespace DependencyAnalyzer.Parsers
                     Console.WriteLine("Registration for same service/impl/project/lifestyle");
                     regiGroup.ToList().ForEach(x =>
                         Console.WriteLine($"Implementation: {x.ImplementationType?.ToDisplayString()}, " +
-                        $"Interface: {x.ServiceInterface?.ToDisplayString()}, " +
+                        $"Interface: {x.ServiceType?.ToDisplayString()}, " +
                         $"Project: {x.ProjectName}, " +
                         $"Lifetime: {x.Lifetime}"));
                 }
@@ -168,22 +169,22 @@ namespace DependencyAnalyzer.Parsers
             var comparer = new FullyQualifiedNameComparer();
 
             //Interfaces dont have dependencies. Assume the dependantSymbol is a concrete class
-            foreach (var (dependantSmybol, dependencies) in DependencyMap)
+            foreach (var (dependantSymbol, rawDependencies) in DependencyMap)
             {
                 //find all nodes for the type
-                List<DependencyNode> dependantNodes = nodes.Where(x => comparer.Equals(x.ImplementationType, dependantSmybol)).ToList();
+                List<DependencyNode> dependantNodes = nodes.Where(x => comparer.Equals(x.ImplementationType, dependantSymbol)).ToList();
 
                 //interfaces wont have nodes
                 if (dependantNodes.Count == 0)
                     continue;
 
                 //for each dependency the class has, connect it to the nodes that represent those objects
-                foreach (var dependencySymbol in dependencies)
+                foreach (var dependencySymbol in rawDependencies)
                 {
                     foreach (var dependantNode in dependantNodes)
                     {
                         //link the raw dependencies (interfaces / literal classes asked for)
-                        dependantNode.RawDependencies = dependencies;
+                        dependantNode.RawDependencies = rawDependencies;
 
                         //find all nodes that could satisfy the dependency
                         var dependencyNodes = nodes

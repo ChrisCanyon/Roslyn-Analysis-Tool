@@ -104,7 +104,7 @@ namespace DependencyAnalyzer.Parsers
 
                 ret.Add(new RegistrationInfo
                 {
-                    ServiceInterface = null,
+                    ServiceType = null,
                     ImplementationType = symbol,
                     Lifetime = LifetimeTypes.Controller,
                     ProjectName = projectName
@@ -117,7 +117,7 @@ namespace DependencyAnalyzer.Parsers
             if (symbol.TypeKind == TypeKind.Interface)
             {
                 relatedRegistrations = RegistrationInfos.Where(registration =>
-                    comparer.Equals(registration.ServiceInterface, symbol)
+                    comparer.Equals(registration.ServiceType, symbol)
                 ).ToList();
             }
             else if (symbol.TypeKind == TypeKind.Class)
@@ -134,14 +134,14 @@ namespace DependencyAnalyzer.Parsers
 
                     //Or a type that implements an interface with Unresolvable Implementation (probably weird factory method or registration from assembly)
                     if (registration.UnresolvableImplementation &&
-                        registration.ServiceInterface != null)
+                        registration.ServiceType != null)
                     {
                         // 1) constructed match: IClass<A>
-                        if (exactInterface.Contains(registration.ServiceInterface))
+                        if (exactInterface.Contains(registration.ServiceType))
                             return true;
 
                         // 2) open generic match: IClass<> vs IClass<A>
-                        if (openInterfaces.Contains(registration.ServiceInterface.OriginalDefinition))
+                        if (openInterfaces.Contains(registration.ServiceType.OriginalDefinition))
                             return true;
                     }
                     return false;
@@ -153,11 +153,11 @@ namespace DependencyAnalyzer.Parsers
             {
                 //I think i need to add the implementation to the factory method here
                 //if is factory method and has interface already
-                if (symbol.TypeKind == TypeKind.Class && registration.ServiceInterface != null && registration.ImplementationType == null)
+                if (symbol.TypeKind == TypeKind.Class && registration.ServiceType != null && registration.ImplementationType == null)
                 {
                     var completeRegistration = new RegistrationInfo
                     {
-                        ServiceInterface = registration.ServiceInterface,
+                        ServiceType = registration.ServiceType,
                         ImplementationType = symbol,
                         Lifetime = registration.Lifetime,
                         ProjectName = registration.ProjectName,

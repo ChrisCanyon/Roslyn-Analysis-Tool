@@ -1,4 +1,5 @@
 ﻿using DependencyAnalyzer.Comparers;
+using DependencyAnalyzer.Extensions;
 using DependencyAnalyzer.Models;
 using DependencyAnalyzer.Parsers;
 using DependencyAnalyzer.Visualizers;
@@ -18,6 +19,120 @@ namespace DependencyAnalyzer
             public string ErrorMessage;
         }
 
+        public ColoredStringBuilder GenerateStatefulReport(DependencyNode? startNode, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+            var visited = new List<DependencyNode>();
+
+            if (!entireProject && !allControllers)
+            {
+                sb.AppendLine($"Potential stateful fields in {startNode.ClassName} dependency tree in project {startNode.ProjectName}:", ConsoleColor.Cyan);
+
+                var currentPath = new Stack<INamedTypeSymbol>();
+                AppendPotentialStateFields(startNode, currentPath, visited, sb);
+            }
+            else
+            {
+                sb.AppendLine($"Potential stateful fields across dependencies in project {project}:", ConsoleColor.Cyan);
+                var relevantNodes = dependencyGraph.Nodes.Where(x => x.ProjectName == project);
+
+                if (allControllers)
+                {
+                    relevantNodes = relevantNodes.Where(x => x.Lifetime == LifetimeTypes.Controller);
+                }
+
+                foreach (var node in relevantNodes)
+                {
+                    var currentPath = new Stack<INamedTypeSymbol>();
+                    AppendPotentialStateFields(node, currentPath, visited, sb);
+                }
+            }
+
+            return sb;
+        }
+
+        private void AppendPotentialStateFields(DependencyNode node, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
+        {
+            var comparer = new FullyQualifiedNameComparer();
+            if (path.Contains(node.ImplementationType, comparer)) return;
+            if (visitedNodes.Any(x => x.ClassName == node.ClassName)) return;
+
+            visitedNodes.Add(node);
+            path.Push(node.ImplementationType);
+
+            if (node.IsPotentiallyStateful())
+            {
+                var fields = node.PotentialStateFields();
+
+                sb.AppendLine($"{node.ClassName} [{node.Lifetime}] — {fields.Count()} state member{(fields.Count() == 1 ? "" : "s")}", ConsoleColor.DarkYellow);
+
+                foreach (var m in fields)
+                {
+                    var display = m switch
+                    {
+                        IFieldSymbol f => FormatField(f),
+                        IEventSymbol e => FormatEvent(e),
+                        _ => m.Name // fallback
+                    };
+
+                    sb.AppendLine($"\t{display}", ConsoleColor.White);
+                }
+            }
+
+            foreach (var dependency in node.DependsOn)
+            {
+                AppendPotentialStateFields(dependency, path, visitedNodes, sb);
+            }
+
+            path.Pop();
+        }
+
+        private static string FormatField(IFieldSymbol f)
+        {
+            var parts = new List<string>();
+
+            // accessibility
+            parts.Add(f.DeclaredAccessibility switch
+            {
+                Accessibility.Public => "public",
+                Accessibility.Internal => "internal",
+                Accessibility.Protected => "protected",
+                Accessibility.Private => "private",
+                _ => ""
+            });
+
+            if (f.IsStatic) parts.Add("static");
+            if (f.IsConst) parts.Add("const");
+            else if (f.IsReadOnly) parts.Add("readonly");
+
+            // type + name
+            parts.Add(f.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+            parts.Add(f.Name);
+
+            return string.Join(" ", parts.Where(p => !string.IsNullOrEmpty(p)));
+        }
+
+        private static string FormatEvent(IEventSymbol e)
+        {
+            var parts = new List<string>();
+
+            parts.Add(e.DeclaredAccessibility switch
+            {
+                Accessibility.Public => "public",
+                Accessibility.Internal => "internal",
+                Accessibility.Protected => "protected",
+                Accessibility.Private => "private",
+                _ => ""
+            });
+
+            if (e.IsStatic) parts.Add("static");
+
+            parts.Add(e.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+            parts.Add(e.Name);
+
+            return string.Join(" ", parts.Where(p => !string.IsNullOrEmpty(p)));
+        }
+
         public ColoredStringBuilder GenerateCycleReport(DependencyNode? startNode, string project, bool entireProject, bool allControllers)
         {
             var sb = new ColoredStringBuilder();
@@ -28,7 +143,7 @@ namespace DependencyAnalyzer
                 sb.AppendLine($"Cycles for {startNode.ClassName} dependency tree in project {startNode.ProjectName}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
-                SearchForCycle(startNode, project, currentPath, visited, sb);
+                SearchForCycle(startNode, currentPath, visited, sb);
             }
             else
             {
@@ -43,14 +158,14 @@ namespace DependencyAnalyzer
                 foreach (var node in relevantNodes)
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
-                    SearchForCycle(node, project, currentPath, visited, sb);
+                    SearchForCycle(node, currentPath, visited, sb);
                 }
             }
 
             return sb;
         }
 
-        private void SearchForCycle(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
+        private void SearchForCycle(DependencyNode node, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
         {
             var comparer = new FullyQualifiedNameComparer();
             if (path.Contains(node.ImplementationType, comparer))
@@ -79,7 +194,7 @@ namespace DependencyAnalyzer
 
             foreach (var dependency in node.DependsOn)
             {
-                SearchForCycle(dependency, project, path, visitedNodes, sb);
+                SearchForCycle(dependency, path, visitedNodes, sb);
             }
 
             path.Pop();
@@ -95,7 +210,7 @@ namespace DependencyAnalyzer
                 sb.AppendLine($"Nodes with excessive dependencies for {startNode.ClassName} depedency tree in project {project}:", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
-                SearchForExcessiveDependencies(startNode, project, currentPath, visited, sb);
+                SearchForExcessiveDependencies(startNode, currentPath, visited, sb);
             }
             else
             {
@@ -110,14 +225,14 @@ namespace DependencyAnalyzer
                 foreach (var node in relevantNodes)
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
-                    SearchForExcessiveDependencies(node, project, currentPath, visited, sb);
+                    SearchForExcessiveDependencies(node, currentPath, visited, sb);
                 }
             }
 
             return sb;
         }
 
-        public void SearchForExcessiveDependencies(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
+        public void SearchForExcessiveDependencies(DependencyNode node, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
         {
             var comparer = new FullyQualifiedNameComparer();
             if (path.Contains(node.ImplementationType, comparer)) return;
@@ -133,7 +248,7 @@ namespace DependencyAnalyzer
             }
             foreach (var dependency in node.DependsOn)
             {
-                SearchForExcessiveDependencies(dependency, project, path, visitedNodes, sb);
+                SearchForExcessiveDependencies(dependency, path, visitedNodes, sb);
             }
 
             path.Pop();
@@ -186,24 +301,24 @@ namespace DependencyAnalyzer
 
             var manualResolutions = manualResolutionParser.ManuallyResolvedSymbols
                 .Where(x => node.SatisfiesDependency(x.ResolvedType) && x.Project == node.ProjectName);
-            foreach (var resolvedSymbol in manualResolutions)
+            foreach (var manualResolution in manualResolutions)
             {
                 resolveNotes.AppendLine($"{node.ClassName} manual resolutions", ConsoleColor.Yellow);
-                resolveNotes.AppendLine($"\t{resolvedSymbol.InvocationPath}", ConsoleColor.White);
+                resolveNotes.AppendLine($"\t{manualResolution.InvocationPath}", ConsoleColor.White);
             }
 
             //TODO for single nodes we need to check if anything that consumes the node is released
             var disposals = manualResolutionParser.ManuallyDisposedSymbols
                 .Where(x => node.SatisfiesDependency(x.DisposedType) && node.ProjectName == x.Project).ToList();
 
-            foreach (var disposedSymbol in disposals)
+            foreach (var disposalInfo in disposals)
             {
                 disposeNotes.AppendLine($"[{node.Lifetime}]{node.ClassName} manual Disposal/Release:", ConsoleColor.Yellow);
-                disposeNotes.AppendLine($"\t{disposedSymbol.CodeSnippet}", ConsoleColor.Yellow);
+                disposeNotes.AppendLine($"\t{disposalInfo.FileAndLine} -> {disposalInfo.CodeSnippet}", ConsoleColor.Yellow);
                 
                 if (FindSensitiveNodesInDependencyTree(node, new Stack<INamedTypeSymbol>(), new List<DependencyNode>(), disposeNotes))
                 {
-                    disposeNotes.AppendLine($"\t{disposedSymbol.InvocationPath}", ConsoleColor.Red);
+                    disposeNotes.AppendLine($"\t{disposalInfo.InvocationPath}", ConsoleColor.Red);
                 }
             }
 
@@ -252,7 +367,7 @@ namespace DependencyAnalyzer
                 sb.AppendLine($"TODO UNUSED METHODS", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
-                TODO(startNode, project, currentPath, visited, sb);
+                TODO(startNode, currentPath, visited, sb);
             }
             else
             {
@@ -267,7 +382,7 @@ namespace DependencyAnalyzer
                 foreach (var node in relevantNodes)
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
-                    TODO(node, project, currentPath, visited, sb);
+                    TODO(node, currentPath, visited, sb);
                 }
             }
 
@@ -284,7 +399,7 @@ namespace DependencyAnalyzer
                 sb.AppendLine($"TODO MANUAL INSTANTIATION", ConsoleColor.Cyan);
 
                 var currentPath = new Stack<INamedTypeSymbol>();
-                TODO(startNode, project, currentPath, visited, sb);
+                TODO(startNode, currentPath, visited, sb);
             }
             else
             {
@@ -299,7 +414,7 @@ namespace DependencyAnalyzer
                 foreach (var node in relevantNodes)
                 {
                     var currentPath = new Stack<INamedTypeSymbol>();
-                    TODO(node, project, currentPath, visited, sb);
+                    TODO(node, currentPath, visited, sb);
                 }
             }
 
@@ -363,7 +478,7 @@ namespace DependencyAnalyzer
                 }
             }
         }
-        private void TODO(DependencyNode node, string project, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
+        private void TODO(DependencyNode node, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
         {
             //TODO stop referencing this
         }

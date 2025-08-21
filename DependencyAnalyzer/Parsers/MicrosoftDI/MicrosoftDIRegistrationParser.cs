@@ -63,7 +63,7 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
                     {
                         registrations.Add(new RegistrationInfo
                         {
-                            ServiceInterface = null,
+                            ServiceType = null,
                             ImplementationType = dbContextSymbol,
                             ProjectName = project.Name,
                             Lifetime = LifetimeTypes.PerWebRequest,
@@ -87,7 +87,7 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
                     {
                         registrations.Add(new RegistrationInfo
                         {
-                            ServiceInterface = interfaceType,
+                            ServiceType = interfaceType,
                             ImplementationType = returnType,
                             ProjectName = project.Name,
                             Lifetime = GetLifetime(methodName),
@@ -112,7 +112,7 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
 
                         registrations.Add(new RegistrationInfo
                         {
-                            ServiceInterface = interfaceType,
+                            ServiceType = interfaceType,
                             ImplementationType = implementationType,
                             ProjectName = project.Name,
                             Lifetime = lifetime,
@@ -181,7 +181,7 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
                 {
                     registrations.Add(new RegistrationInfo
                     {
-                        ServiceInterface = null,
+                        ServiceType = null,
                         ImplementationType = factory,
                         ProjectName = project.Name,
                         Lifetime = GetLifetime(methodName),
@@ -200,7 +200,7 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
             {
                 registrations.Add(new RegistrationInfo
                 {
-                    ServiceInterface = null,
+                    ServiceType = null,
                     ImplementationType = dbContextType,
                     ProjectName = project.Name,
                     Lifetime = LifetimeTypes.PerWebRequest,
@@ -233,7 +233,7 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
             {
                 registrations.Add(new RegistrationInfo
                 {
-                    ServiceInterface = iface,
+                    ServiceType = iface,
                     ImplementationType = impl,
                     ProjectName = project.Name,
                     Lifetime = lifetime
@@ -260,7 +260,7 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
 
         registrations.Add(new RegistrationInfo
         {
-            ServiceInterface = interfaceSymbol,
+            ServiceType = interfaceSymbol,
             ImplementationType = implementationSymbol,
             ProjectName = project.Name,
             Lifetime = LifetimeTypes.Transient,
