@@ -122,9 +122,19 @@ namespace DependencyAnalyzer.Parsers
             }
             else if (symbol.TypeKind == TypeKind.Class)
             {
-                var exactInterface = symbol.AllInterfaces.ToImmutableHashSet(comparer);
+                var exactInterfaces = symbol.AllInterfaces.ToImmutableHashSet(comparer);
                 var openInterfaces = symbol.AllInterfaces.Select(i => i.OriginalDefinition)
                                     .ToImmutableHashSet(comparer);
+
+                static IEnumerable<INamedTypeSymbol> BaseTypes(INamedTypeSymbol t)
+                {
+                    for (var b = t.BaseType; b != null; b = b.BaseType)
+                        yield return b;
+                }
+                var exactBases = BaseTypes(symbol).ToImmutableHashSet(comparer);
+                var openBases = exactBases
+                    .Select(b => b.OriginalDefinition)
+                    .ToImmutableHashSet(comparer);
 
                 relatedRegistrations = RegistrationInfos.Where(registration =>
                 {
@@ -136,13 +146,13 @@ namespace DependencyAnalyzer.Parsers
                     if (registration.UnresolvableImplementation &&
                         registration.ServiceType != null)
                     {
-                        // 1) constructed match: IClass<A>
-                        if (exactInterface.Contains(registration.ServiceType))
-                            return true;
+                        // Interfaces
+                        if (exactInterfaces.Contains(registration.ServiceType)) return true;                       // closed iface
+                        if (openInterfaces.Contains(registration.ServiceType.OriginalDefinition)) return true;     // open generic iface
 
-                        // 2) open generic match: IClass<> vs IClass<A>
-                        if (openInterfaces.Contains(registration.ServiceType.OriginalDefinition))
-                            return true;
+                        // Base classes
+                        if (exactBases.Contains(registration.ServiceType)) return true;                            // closed base
+                        if (openBases.Contains(registration.ServiceType.OriginalDefinition)) return true;
                     }
                     return false;
                 }
