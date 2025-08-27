@@ -17,12 +17,9 @@ Analyze and visualize dependency relationships in a .NET solution. Detect proble
 - ⚠️ **Detect anti-patterns**
   - Captive dependencies (e.g., singleton depending on transient)
   - Manual disposal of injected services
-  - `new` operator used instead of DI
-  - Unused service methods
 - 💻 **Interactive UI**
   - Search class names
   - View dependency graphs and tree outputs
-  - Switch between analysis modes
 
 ---
 
@@ -32,7 +29,7 @@ Analyze and visualize dependency relationships in a .NET solution. Detect proble
 
 - .NET 8 SDK
 - [Graphviz](https://graphviz.org/) (for rendering `.dot` files)
-
+  - Ensure graphviz is in your PATH
 ### Setup
 
 1. Clone the repo:
