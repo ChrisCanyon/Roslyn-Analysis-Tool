@@ -36,7 +36,7 @@ MSBuildLocator.RegisterDefaults();
 WriteGreenText($"~~~ Opening Workspace ~~~");
 using var workspace = MSBuildWorkspace.Create();
 
-string solutionPath = "C:\\TylerDev\\onlineservices\\Source\\InSite.sln";
+string solutionPath = "C:\\PathToSln.sln";
 
 //Generate full dependency graph for project and register as single to cache it
 var stopwatch = Stopwatch.StartNew();
