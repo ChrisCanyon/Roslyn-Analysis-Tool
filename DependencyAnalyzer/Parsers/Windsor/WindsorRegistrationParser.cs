@@ -3,6 +3,9 @@ using DependencyAnalyzer.Interfaces;
 using DependencyAnalyzer.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.FindSymbols;
+using System.Diagnostics;
+using System.Reflection.Metadata;
 
 namespace DependencyAnalyzer.Parsers.Windsor
 {
@@ -23,6 +26,9 @@ namespace DependencyAnalyzer.Parsers.Windsor
     {
         public async Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution)
         {
+            Console.WriteLine($"Info: Parsing Registration Info");
+            var stopwatch = Stopwatch.StartNew();
+
             var ret = new List<RegistrationInfo>();
 
             var registrationTasks = new List<Task<List<RegistrationInfo>>>();
@@ -31,12 +37,7 @@ namespace DependencyAnalyzer.Parsers.Windsor
             {
                 if (project.Name.ToLower().Contains("test")) continue;
                 //no async for debug
-#if DEBUG
-                var projectRegistrations = await GetRegistrationsFromProjectAsync(project, solution);
-                ret.AddRange(projectRegistrations);
-#else
                 registrationTasks.Add(GetRegistrationsFromProjectAsync(project, solution));
-#endif
             }
 
             await Task.WhenAll(registrationTasks.ToArray());
@@ -47,6 +48,9 @@ namespace DependencyAnalyzer.Parsers.Windsor
                 ret.AddRange(projectRegistrations);
             }
 
+            stopwatch.Stop();
+            Console.WriteLine($"~~~ Windsor Registration Parse ~~~");
+            Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
             return ret;
         }
 
@@ -57,9 +61,13 @@ namespace DependencyAnalyzer.Parsers.Windsor
 
             foreach (var doc in project.Documents)
             {
-                var root = await doc.GetSyntaxRootAsync();
+                var rootTask = doc.GetSyntaxRootAsync();
+                var modelTask = doc.GetSemanticModelAsync();
 
-                var model = await doc.GetSemanticModelAsync();
+                await Task.WhenAll(rootTask, modelTask);
+
+                var root = rootTask.Result;
+                var model = modelTask.Result;
 
                 if (root == null || model == null) continue;
 

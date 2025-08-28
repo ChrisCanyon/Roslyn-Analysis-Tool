@@ -111,8 +111,13 @@ public abstract class BaseParser
         {
             foreach (var document in project.Documents)
             {
-                var root = await document.GetSyntaxRootAsync();
-                var model = await document.GetSemanticModelAsync();
+                var rootTask = document.GetSyntaxRootAsync();
+                var modelTask = document.GetSemanticModelAsync();
+
+                await Task.WhenAll(rootTask, modelTask);
+
+                var root = rootTask.Result;
+                var model = modelTask.Result;
 
                 if (root is null || model is null) continue;
 

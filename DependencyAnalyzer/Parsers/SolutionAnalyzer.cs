@@ -5,6 +5,7 @@ using DependencyAnalyzer.Parsers.Windsor;
 using System.Collections.Immutable;
 using DependencyAnalyzer.Models;
 using DependencyAnalyzer.Comparers;
+using System.Diagnostics;
 
 namespace DependencyAnalyzer.Parsers
 {
@@ -16,27 +17,41 @@ namespace DependencyAnalyzer.Parsers
         public static async Task<SolutionAnalyzer> Build(Solution solution)
         {
             var allTypesTask = GetAllTypesInSolutionAsync(solution);
-
             var usesWindsor = false;
             var usesMicrosoftDi = false;
 
-            foreach (var project in solution.Projects)
+            Console.WriteLine($"Info: Checking projects for dependency frameworks");
+            var stopwatch = Stopwatch.StartNew();
+
+            foreach (var p in solution.Projects)
             {
-                foreach (var document in project.Documents)
+                foreach (var r in p.MetadataReferences)
                 {
-                    var text = document.GetTextAsync().Result.ToString();
+                    var display = r.Display;
+                    if (string.IsNullOrEmpty(display)) continue;
 
-                    if (text.Contains("Castle.Windsor") || text.Contains("IWindsorContainer"))
-                    {
+                    var file = Path.GetFileNameWithoutExtension(display);
+
+                    // Castle Windsor
+                    if (!usesWindsor && (file.Equals("Castle.Windsor", StringComparison.OrdinalIgnoreCase) ||
+                                     display.Contains("Castle.Windsor", StringComparison.OrdinalIgnoreCase)))
                         usesWindsor = true;
-                    }
 
-                    if (text.Contains("Microsoft.Extensions.DependencyInjection") || text.Contains("IServiceCollection"))
-                    {
+                    // Microsoft DI (either assembly triggers true)
+                    if (!usesMicrosoftDi && (
+                        file.Equals("Microsoft.Extensions.DependencyInjection", StringComparison.OrdinalIgnoreCase) ||
+                        file.Equals("Microsoft.Extensions.DependencyInjection.Abstractions", StringComparison.OrdinalIgnoreCase) ||
+                        display.Contains("Microsoft.Extensions.DependencyInjection", StringComparison.OrdinalIgnoreCase)))
                         usesMicrosoftDi = true;
-                    }
+
+                    if (usesWindsor && usesMicrosoftDi) break;
                 }
             }
+
+            stopwatch.Stop();
+            Console.WriteLine($"~~~ Dep Framework Check ~~~");
+            Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
+
             var allTypes = new List<INamedTypeSymbol>();
             var registrationInfos = new List<RegistrationInfo>();
             if (usesMicrosoftDi)
@@ -54,7 +69,7 @@ namespace DependencyAnalyzer.Parsers
                 registrationInfos.AddRange(await registrationInfosTask);
             }
 
-            allTypes.AddRange(await allTypesTask);
+            allTypes.AddRange(allTypesTask.Result);
 
             return new SolutionAnalyzer(allTypes, registrationInfos);
         }
@@ -191,40 +206,76 @@ namespace DependencyAnalyzer.Parsers
 
         private static async Task<List<INamedTypeSymbol>> GetAllTypesInSolutionAsync(Solution solution)
         {
+            Console.WriteLine($"Info: Loading all types from solution");
+            var stopwatch = Stopwatch.StartNew();
+
             var allSymbols = new List<INamedTypeSymbol>();
 
+            var tasks = new List<Task<List<INamedTypeSymbol>>>();
             foreach (var project in solution.Projects)
             {
-                var compilation = await project.GetCompilationAsync();
-                if (compilation == null)
-                    continue;
+                tasks.Add(GetAllTypesInProjectAsync(project));
+            }
 
-                foreach (var document in project.Documents)
+            await Task.WhenAll(tasks);
+            foreach (var task in tasks)
+            {
+                allSymbols.AddRange(task.Result);
+            }
+
+            stopwatch.Stop();
+            Console.WriteLine($"~~~ GetAllTypesInSolutionAsync ~~~");
+            Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
+            return allSymbols;
+        }
+
+        private static async Task<List<INamedTypeSymbol>> GetAllTypesInProjectAsync(Project project)
+        {
+            var ret = new List<INamedTypeSymbol>();
+            var compilation = await project.GetCompilationAsync();
+            if (compilation == null)
+                return ret;
+
+            var tasks = new List<Task<List<INamedTypeSymbol>>>();
+            foreach (var document in project.Documents)
+            {
+                tasks.Add(GetAllTypesInDocumentAsync(document, compilation));
+            }
+
+            await Task.WhenAll(tasks);
+            foreach (var task in tasks)
+            {
+                ret.AddRange(task.Result);
+            }
+            return ret;
+        }
+
+        private static async Task<List<INamedTypeSymbol>> GetAllTypesInDocumentAsync(Document document, Compilation compilation)
+        {
+            var ret = new List<INamedTypeSymbol>();
+
+            var syntaxTree = await document.GetSyntaxTreeAsync();
+            if (syntaxTree == null)
+                return ret;
+
+            var root = await syntaxTree.GetRootAsync();
+            var semanticModel = compilation.GetSemanticModel(syntaxTree);
+            if (semanticModel == null)
+                return ret;
+
+            var typeDeclarations = root.DescendantNodes()
+                .Where(n => n is ClassDeclarationSyntax || n is InterfaceDeclarationSyntax);
+
+            foreach (var decl in typeDeclarations)
+            {
+                var symbol = semanticModel.GetDeclaredSymbol(decl) as INamedTypeSymbol;
+                if (symbol != null)
                 {
-                    var syntaxTree = await document.GetSyntaxTreeAsync();
-                    if (syntaxTree == null)
-                        continue;
-
-                    var root = await syntaxTree.GetRootAsync();
-                    var semanticModel = compilation.GetSemanticModel(syntaxTree);
-                    if (semanticModel == null)
-                        continue;
-
-                    var typeDeclarations = root.DescendantNodes()
-                        .Where(n => n is ClassDeclarationSyntax || n is InterfaceDeclarationSyntax);
-
-                    foreach (var decl in typeDeclarations)
-                    {
-                        var symbol = semanticModel.GetDeclaredSymbol(decl) as INamedTypeSymbol;
-                        if (symbol != null)
-                        {
-                            allSymbols.Add(symbol);
-                        }
-                    }
+                    ret.Add(symbol);
                 }
             }
 
-            return allSymbols;
+            return ret;
         }
     }
 }

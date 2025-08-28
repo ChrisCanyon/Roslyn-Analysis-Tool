@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
+using System.Diagnostics;
 using System.Reflection;
 
 namespace DependencyAnalyzer.Parsers
@@ -14,17 +15,27 @@ namespace DependencyAnalyzer.Parsers
 
         public async Task Build()
         {
-            ManuallyResolvedSymbols = await FindAllManuallyResolvedSymbols();
-            ManuallyDisposedSymbols = await FindAllManuallyDisposedSymbols();
+            var resolvedTask = FindAllManuallyResolvedSymbols();
+            var disposedTask = FindAllManuallyDisposedSymbols();
+
+            await Task.WhenAll(resolvedTask, disposedTask);
+
+            ManuallyResolvedSymbols = resolvedTask.Result;
+            ManuallyDisposedSymbols = disposedTask.Result;
         }
 
         private async Task<List<IMethodSymbol>> GetMethodsFromString(string methodName, string fullyQualifiedTypeName) {
             var ret = new List<IMethodSymbol>();
 
-            // Search all projects for the declaring type
+            var tasks = new List<Task<Compilation?>>();
             foreach (var project in solution.Projects)
             {
-                var compilation = await project.GetCompilationAsync();
+                tasks.Add(project.GetCompilationAsync());
+            }
+
+            await Task.WhenAll(tasks);
+            foreach (var task in tasks) {
+                var compilation = task.Result;
                 if (compilation == null) continue;
 
                 var typeSymbol = compilation.GetTypeByMetadataName(fullyQualifiedTypeName);
@@ -60,13 +71,13 @@ namespace DependencyAnalyzer.Parsers
 
         private async Task<List<ManualDisposeInfo>> FindAllManuallyDisposedSymbols()
         {
-            var ret = new List<ManualDisposeInfo>();
+            var retTasks = new List<Task<List<ManualDisposeInfo>>>();
 
             var resolveTargets = new[]
             {
                 ("Dispose", "System.IDisposable"),
                 ("DisposeAsync", "System.IAsyncDisposable"),
-                ("Release", "Castle.Windsor.IWindsorContainer"),
+                //("Release", "Castle.Windsor.IWindsorContainer"),
             };
             var comparer = new FullyQualifiedNameComparer();
 
@@ -140,7 +151,7 @@ namespace DependencyAnalyzer.Parsers
                         InvocationPath = disposeCallContainingMethod.ToDisplayString()
                     };
 
-                    ret.AddRange(await GenerateDisposalInfos(disposedClass, fileAndLine, disposeInvocation, [invocationRoot], model, solution));
+                    retTasks.Add(GenerateDisposalInfos(disposedClass, fileAndLine, disposeInvocation, [invocationRoot], model, solution));
                 }
                 else
                 {
@@ -153,8 +164,16 @@ namespace DependencyAnalyzer.Parsers
                         Console.WriteLine($"Unable to determine root invocation of {disposeCallContainingMethod.ToDisplayString()}:{disposeInvocation.ToFullString()}", ConsoleColor.Cyan);
                     }
 
-                    ret.AddRange(await GenerateDisposalInfos(disposedClass, fileAndLine, disposeInvocation, rootInvocations, model, solution));
+                    retTasks.Add(GenerateDisposalInfos(disposedClass, fileAndLine, disposeInvocation, rootInvocations, model, solution));
                 }
+            }
+
+            var ret = new List<ManualDisposeInfo>();
+
+            await Task.WhenAll(retTasks);
+            foreach (var task in retTasks)
+            {
+                ret.AddRange(task.Result);
             }
 
             return ret;
@@ -185,7 +204,7 @@ namespace DependencyAnalyzer.Parsers
                         {
                             DisposedType = disposedClass,
                             ContainingType = containingType,
-                            CodeSnippet = disposeInvocation.ToFullString(),
+                            CodeSnippet = disposeInvocation.ToFullString().Trim(),
                             Project = project,
                             FileAndLine = fileAndLine,
                             InvocationPath = $"{rootInvocation.InvocationPath} -> {disposeInvocation.ToFullString().Trim()}"
@@ -196,7 +215,7 @@ namespace DependencyAnalyzer.Parsers
                 {
                     DisposedType = disposedClass,
                     ContainingType = containingType,
-                    CodeSnippet = disposeInvocation.ToFullString(),
+                    CodeSnippet = disposeInvocation.ToFullString().Trim(),
                     Project = rootInvocation.Project,
                     FileAndLine = fileAndLine,
                     InvocationPath = $"{rootInvocation.InvocationPath} -> {disposeInvocation.ToFullString().Trim()}"
@@ -388,7 +407,7 @@ namespace DependencyAnalyzer.Parsers
 
                     if (IsIgnoredClassType(invocation, model)) continue;
 
-                    string invocationPath = BuildInvocationPath(invocation, document, model);
+                    string invocationPath = BuildSimpleInvocationPath(invocation, document);
 
                     ret.AddRange(GetResolutionInfoFromInvocations(invocation, model, document.Project.Name, invocationPath));
                 }
@@ -396,32 +415,17 @@ namespace DependencyAnalyzer.Parsers
             return ret;
         }
 
-        private static string BuildInvocationPath(
+        private static string BuildSimpleInvocationPath(
             InvocationExpressionSyntax invocation,
-            Document document,
-            SemanticModel model)
+            Document document)
         {
             // file + line
             var lineSpan = invocation.GetLocation().GetLineSpan();
             int line = lineSpan.StartLinePosition.Line + 1;
             string file = invocation.SyntaxTree.FilePath ?? document.Name;
 
-            // where the call sits (enclosing method/type)
-            var enclosing = model.GetEnclosingSymbol(invocation.SpanStart);
-            var enclosingMethod = enclosing as IMethodSymbol;
-            var enclosingType = enclosingMethod?.ContainingType;
-
-            string enclosingStr =
-                (enclosingType != null && enclosingMethod != null)
-                    ? $"{enclosingType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}.{enclosingMethod.Name}"
-                    : enclosing?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) ?? "?";
-
-            // what is being called (target method)
-            var target = model.GetSymbolInfo(invocation.Expression).Symbol as IMethodSymbol;
-            string targetStr = target?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) ?? invocation.Expression.ToString();
-
             // final: Project:File:Line — Enclosing → Target
-            return $"{document.Project.Name}:{Path.GetFileName(file)}:{line} — {enclosingStr} → {targetStr}";
+            return $"{document.Project.Name}:{Path.GetFileName(file)}:{line} - {invocation.ToFullString()}";
         }
 
         private static bool IsIgnoredClassType(InvocationExpressionSyntax invocation, SemanticModel model)
@@ -453,7 +457,7 @@ namespace DependencyAnalyzer.Parsers
                 : null;
             if (containingType == null)
             {
-                Console.WriteLine($"Could not find containing class for {invocation.ToFullString()}");
+                Console.WriteLine($"Could not find containing class for {invocation.ToFullString().Trim()}");
             }
 
             foreach (var resolvedType in GetTypeArgumentsFromInvocation(invocation, model))

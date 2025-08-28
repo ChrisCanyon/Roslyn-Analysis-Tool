@@ -2,13 +2,18 @@
 using DependencyAnalyzer.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Diagnostics;
 
 namespace DependencyAnalyzer.Parsers.MicrosoftDI;
 
+//TODO REWRITE THIS IS REALLY SLOW FOR SOME REASON
 public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
 {
     public async Task<List<RegistrationInfo>> GetSolutionRegistrations(Solution solution)
     {
+        Console.WriteLine($"Info: Parsing Microsoft DI Registration Info");
+        var stopwatch = Stopwatch.StartNew();
+
         var registrations = new List<RegistrationInfo>();
         var registrationTasks = new List<Task<List<RegistrationInfo>>>();
 
@@ -17,17 +22,16 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
             if (project.Name.ToLower().Contains("test"))
                 continue;
 
-#if DEBUG
-            registrations.AddRange(await GetRegistrationsFromProjectAsync(project));
-#else
             registrationTasks.Add(GetRegistrationsFromProjectAsync(project));
-#endif
         }
 
         await Task.WhenAll(registrationTasks);
         foreach (var task in registrationTasks)
             registrations.AddRange(task.Result);
 
+        stopwatch.Stop();
+        Console.WriteLine($"~~~ M.DI Registration Parse ~~~");
+        Console.WriteLine($"\tElapsed time: {stopwatch.ElapsedMilliseconds} ms");
         return registrations;
     }
 
@@ -37,8 +41,13 @@ public class MicrosoftDIRegistrationParser : BaseParser, IRegistrationParser
 
         foreach (var doc in project.Documents)
         {
-            var root = await doc.GetSyntaxRootAsync();
-            var model = await doc.GetSemanticModelAsync();
+            var rootTask = doc.GetSyntaxRootAsync();
+            var modelTask = doc.GetSemanticModelAsync();
+
+            await Task.WhenAll(rootTask, modelTask);
+
+            var root = rootTask.Result;
+            var model = modelTask.Result;
             if (root == null || model == null) continue;
 
             var invocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>();
