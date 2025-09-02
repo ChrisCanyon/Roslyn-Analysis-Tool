@@ -43,3 +43,4 @@ Analyze and visualize dependency relationships in a .NET solution. Detect proble
     SolutionAnalyzer solutionAnalyzer = await SolutionAnalyzer.BuildSolutionAnalyzer("C:\\PathToYour\\Solution.sln");
 3. That's it!  
     Run the MVCWebView to see your code in a whole new way
+    It can take a few minute for large repos to be analyzed before the UI loads. Check the console for logs if you think it is taking a while
