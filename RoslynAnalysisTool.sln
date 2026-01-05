@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DependencyAnalyzer", "Depen
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MVCWebView", "MVCWebView\MVCWebView.csproj", "{A25A350E-8084-49DA-A396-39490A4CCF51}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RandomCodeAnalysis", "RandomCodeAnalysis\RandomCodeAnalysis.csproj", "{8F095351-1E5A-448F-8E56-48B1C5EE56A2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{A25A350E-8084-49DA-A396-39490A4CCF51}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A25A350E-8084-49DA-A396-39490A4CCF51}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A25A350E-8084-49DA-A396-39490A4CCF51}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8F095351-1E5A-448F-8E56-48B1C5EE56A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8F095351-1E5A-448F-8E56-48B1C5EE56A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8F095351-1E5A-448F-8E56-48B1C5EE56A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8F095351-1E5A-448F-8E56-48B1C5EE56A2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
