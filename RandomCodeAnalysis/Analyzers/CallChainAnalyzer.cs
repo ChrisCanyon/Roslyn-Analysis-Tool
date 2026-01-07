@@ -15,8 +15,8 @@ namespace RandomCodeAnalysis.Analyzers
         {
             //var fullyQualifiedTypeName = "Infrastructure.Incode.InvisionGateway.Common.RestApi.RestApiBase";
             //var methodName = "ExecuteWebRequest";
-            var fullyQualifiedTypeName = "RAT_Test.CacheManager";
-            var methodName = "TESTMETHOD";
+            var fullyQualifiedTypeName = "App.Data.Infrastructure.DatabaseContext";
+            var methodName = "SimulateIO";
 
             //            var methodSymbols = await GetConstructorsFromString(fullyQualifiedTypeName, solution);
             var methodSymbols = await GetMethodsFromString(methodName, fullyQualifiedTypeName, solution);

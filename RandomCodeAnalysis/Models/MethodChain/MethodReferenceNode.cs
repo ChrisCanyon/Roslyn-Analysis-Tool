@@ -43,7 +43,7 @@ namespace RandomCodeAnalysis.Models.MethodChain
         public List<MethodReferenceNode> CallerNodes = new List<MethodReferenceNode>();
 
         [JsonIgnore]
-        public IMethodSymbol ReferencedMethod { get; private set; }
+        public IMethodSymbol ReferencedMethod { get; set; }
         
         // Pointers to callsites
         [JsonIgnore]
