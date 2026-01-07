@@ -8,6 +8,8 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Newtonsoft.Json;
+using Microsoft.CodeAnalysis.Text;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace RandomCodeAnalysis.Models.MethodChain
 {
@@ -33,28 +35,58 @@ namespace RandomCodeAnalysis.Models.MethodChain
             return node == null ? "" : node.ReferencedMethod.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         }
     }
+    public sealed record ReferenceSite(DocumentId DocumentId, TextSpan Span);
 
     public class MethodReferenceNode
     {
         public string MethodName { get; private set; }
-        public List<MethodReferenceNode> References = new List<MethodReferenceNode>();
+        public List<MethodReferenceNode> CallerNodes = new List<MethodReferenceNode>();
 
         [JsonIgnore]
-        public ISymbol ReferencedMethod { get; private set; }
+        public IMethodSymbol ReferencedMethod { get; private set; }
+        
+        // Pointers to callsites
         [JsonIgnore]
-        public List<Location> ReferenceLocations { get; private set; }
+        public List<ReferenceSite> CallSites { get; private set; }
 
-        public MethodReferenceNode(IEnumerable<ReferencedSymbol> referenced)
+        private MethodReferenceNode(IMethodSymbol referencedMethod)
         {
-            ReferencedMethod = referenced.First().Definition;
+            ReferencedMethod = referencedMethod;
+            MethodName = referencedMethod.ToDisplayString();
+        }
 
-            ReferenceLocations = referenced
-                .SelectMany(l => l.Locations)
-                .Select(l => l.Location)
-                .Where(l => l.IsInSource)
-                .DistinctBy(l => (l.SourceTree?.FilePath, l.SourceSpan.Start)).ToList();
+        public static async Task<MethodReferenceNode> CreateAsync(
+            IEnumerable<ReferencedSymbol> references,
+            IMethodSymbol referencedMethod,
+            Solution solution)
+        {
+            var node = new MethodReferenceNode(referencedMethod);
+            node.CallSites = await BuildInvocationCallSitesAsync(references, solution).ConfigureAwait(false);
+            return node;
+        }
 
-            MethodName = ReferencedMethod.ToDisplayString();
+        private static async Task<List<ReferenceSite>> BuildInvocationCallSitesAsync(
+            IEnumerable<ReferencedSymbol> references,
+            Solution solution)
+        {
+            var results = new List<ReferenceSite>();
+
+            foreach (var loc in references.SelectMany(r => r.Locations).Select(x => x.Location))
+            {
+                if (!loc.IsInSource || loc.SourceTree == null)
+                    continue;
+
+                var doc = solution.GetDocument(loc.SourceTree);
+                if (doc == null)
+                    continue;
+
+                // Save the reference location, not an invocation span
+                results.Add(new ReferenceSite(doc.Id, loc.SourceSpan));
+            }
+
+            return results
+                    .DistinctBy(x => (x.DocumentId, x.Span))
+                    .ToList();
         }
     }
 }

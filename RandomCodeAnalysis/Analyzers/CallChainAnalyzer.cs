@@ -4,16 +4,19 @@ using Microsoft.CodeAnalysis.FindSymbols;
 using Newtonsoft.Json;
 using RandomCodeAnalysis.Models.MethodChain;
 using System.Security.Cryptography.Xml;
+using System.Security.Policy;
 using System.Xml.Linq;
 
 namespace RandomCodeAnalysis.Analyzers
 {
     public static class CallChainAnalyzer
     {
-        public static async Task FindFullMethodChain(Solution solution)
+        public static async Task<MethodReferenceNode> FindFullMethodChain(Solution solution)
         {
-            var fullyQualifiedTypeName = "Infrastructure.Incode.InvisionGateway.Common.RestApi.RestApiBase";
-            var methodName = "ExecuteWebRequest";
+            //var fullyQualifiedTypeName = "Infrastructure.Incode.InvisionGateway.Common.RestApi.RestApiBase";
+            //var methodName = "ExecuteWebRequest";
+            var fullyQualifiedTypeName = "RAT_Test.CacheManager";
+            var methodName = "TESTMETHOD";
 
             //            var methodSymbols = await GetConstructorsFromString(fullyQualifiedTypeName, solution);
             var methodSymbols = await GetMethodsFromString(methodName, fullyQualifiedTypeName, solution);
@@ -26,12 +29,11 @@ namespace RandomCodeAnalysis.Analyzers
             var methodSymbol = methodSymbols.First();
             var references = await FindAllReferences(methodSymbols, solution);
 
-            var topNode = new MethodReferenceNode(references);
+            var topNode = await MethodReferenceNode.CreateAsync(references,methodSymbol, solution);
             var allNodes = new List<MethodReferenceNode>();
             await BuildReferenceChain(topNode, solution, allNodes);
-            _ = topNode;
-            var asString = JsonConvert.SerializeObject(topNode);
-            _ = asString;
+
+            return topNode;
         }
 
         private static async Task BuildReferenceChain(MethodReferenceNode node, Solution solution, List<MethodReferenceNode> visited)
@@ -40,47 +42,33 @@ namespace RandomCodeAnalysis.Analyzers
             if (visited.Contains(node, cmp)) return;
             visited.Add(node);
 
-            foreach (var location in node.ReferenceLocations)
+            foreach (var site in node.CallSites)
             {
-                var sourceTree = location.SourceTree;
-                if (sourceTree == null) continue;
-
-                var span = location.SourceSpan;
-
-                // Get the project/compilation that owns this tree
-                var document = solution.GetDocument(sourceTree);
+                var document = solution.GetDocument(site.DocumentId);
                 if (document == null) continue;
 
-                var semanticModel = await document.GetSemanticModelAsync();
+                var semanticModel = await document.GetSemanticModelAsync().ConfigureAwait(false);
                 if (semanticModel == null) continue;
 
-                var symbol = semanticModel.GetEnclosingSymbol(span.Start);
+                var symbol = semanticModel.GetEnclosingSymbol(site.Span.Start);
                 IMethodSymbol? method = null;
 
-                for (var s = symbol; s is IMethodSymbol m; s = s.ContainingSymbol)
+                while (symbol != null && symbol is not IMethodSymbol)
                 {
-                    if (m.MethodKind == MethodKind.Ordinary ||
-                        m.MethodKind == MethodKind.Constructor ||
-                        m.MethodKind == MethodKind.StaticConstructor)
-                    {
-                        method = m;
-                        break;
-                    }
+                    symbol = symbol.ContainingSymbol;
                 }
 
-                if (method == null)
-                    continue; // still something weird (field initializer, etc.)
-
                 // Now you have the containing method symbol
-                var containingMethod = method;
+                var containingMethod = symbol as IMethodSymbol;
+                if (containingMethod == null)
+                    continue;
 
                 //find refrences
                 var references = await FindAllReferences(containingMethod, solution);
 
-                //if no references return
-                if (references.Count() == 0) continue;
-                var newRefNode = new MethodReferenceNode(references);
-                node.References.Add(newRefNode);
+                //build new node
+                var newRefNode = await MethodReferenceNode.CreateAsync(references, containingMethod, solution);
+                node.CallerNodes.Add(newRefNode);
 
                 if (visited.Contains(newRefNode, cmp)) continue;
                 await BuildReferenceChain(newRefNode, solution, visited);
