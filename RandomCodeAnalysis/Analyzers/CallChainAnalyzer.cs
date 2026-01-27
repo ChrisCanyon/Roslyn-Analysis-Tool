@@ -9,100 +9,193 @@ using System.Xml.Linq;
 
 namespace RandomCodeAnalysis.Analyzers
 {
-    public static class CallChainAnalyzer
+    public class CallChainAnalyzer
     {
-        public static async Task<MethodReferenceNode> FindFullMethodChain(Solution solution)
-        {
-            //var fullyQualifiedTypeName = "Infrastructure.Incode.InvisionGateway.Common.RestApi.RestApiBase";
-            //var methodName = "ExecuteWebRequest";
-            var fullyQualifiedTypeName = "App.Data.Infrastructure.DatabaseContext";
-            var methodName = "SimulateIO";
+        private readonly Solution _solution;
+        private readonly MethodReferenceCache _referenceCache;
 
-            //            var methodSymbols = await GetConstructorsFromString(fullyQualifiedTypeName, solution);
-            var methodSymbols = await GetMethodsFromString(methodName, fullyQualifiedTypeName, solution);
-            
+        public CallChainAnalyzer(Solution solution)
+        {
+            _solution = solution;
+            _referenceCache = new MethodReferenceCache(solution);
+        }
+
+        public async Task<MethodReferenceNode> FindFullMethodChain(string fullyQualifiedTypeName, string methodName, bool shallow)
+        {
+            Console.WriteLine($"[FindFullMethodChain] Starting analysis for {fullyQualifiedTypeName}.{methodName}");
+
+            var methodSymbols = await GetMethodsFromString(methodName, fullyQualifiedTypeName).ConfigureAwait(false);
+
             if (methodSymbols.Count > 1)
             {
-                //confused
+                Console.WriteLine($"[FindFullMethodChain] Found {methodSymbols.Count} overloads");
             }
 
             var methodSymbol = methodSymbols.First();
-            var references = await FindAllReferences(methodSymbols, solution);
+            Console.WriteLine($"[FindFullMethodChain] Finding references...");
+            var references = await _referenceCache.FindAllReferencesAsync(methodSymbols).ConfigureAwait(false);
 
-            var topNode = await MethodReferenceNode.CreateAsync(references,methodSymbol, solution);
+            Console.WriteLine($"[FindFullMethodChain] Creating top node...");
+            var topNode = await MethodReferenceNode.CreateAsync(references,methodSymbol, _solution).ConfigureAwait(false);
+            Console.WriteLine($"[FindFullMethodChain] Top node has {topNode.CallSites.Count} call sites");
+
             var allNodes = new List<MethodReferenceNode>();
-            await BuildReferenceChain(topNode, solution, allNodes);
+            await BuildReferenceChain(topNode, allNodes, shallow).ConfigureAwait(false);
 
+            Console.WriteLine($"[FindFullMethodChain] Complete! Total nodes visited: {allNodes.Count}");
+            Console.WriteLine($"[FindFullMethodChain] Reference cache size: {_referenceCache.CacheSize} methods");
             return topNode;
         }
 
-        private static async Task BuildReferenceChain(MethodReferenceNode node, Solution solution, List<MethodReferenceNode> visited)
+        private async Task BuildReferenceChain(MethodReferenceNode node, List<MethodReferenceNode> visited, bool shallow = false)
         {
             var cmp = new MethodReferenceNodeComparer();
-            if (visited.Contains(node, cmp)) return;
+            if (visited.Contains(node, cmp))
+            {
+                Console.WriteLine($"[BuildReferenceChain] SKIPPED (already visited): {node.MethodName}");
+                return;
+            }
             visited.Add(node);
 
+            // Only log if this method has a lot of call sites (potential problem)
+            if (node.CallSites.Count > 50)
+            {
+                Console.WriteLine($"[WARN] {node.ReferencedMethod.Name} has {node.CallSites.Count} call sites (IsOverride: {node.ReferencedMethod.IsOverride}, IsVirtual: {node.ReferencedMethod.IsVirtual})");
+            }
+
+            // Track caller nodes we've already added to THIS node to prevent duplicates
+            var addedCallers = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+
+            // Phase 1: Identify all unique containing methods from call sites (fast)
+            var containingMethods = new List<IMethodSymbol>();
+            int skippedCount = 0;
+            int alreadyVisitedCount = 0;
             foreach (var site in node.CallSites)
             {
-                var document = solution.GetDocument(site.DocumentId);
+                var document = _solution.GetDocument(site.DocumentId);
                 if (document == null) continue;
 
                 var semanticModel = await document.GetSemanticModelAsync().ConfigureAwait(false);
                 if (semanticModel == null) continue;
 
-                var symbol = semanticModel.GetEnclosingSymbol(site.Span.Start);
-                IMethodSymbol? method = null;
-
-                while (symbol != null && symbol is not IMethodSymbol)
+                var containingMethod = GetContainingMethod(semanticModel, site.Span.Start);
+                if (containingMethod == null)
                 {
-                    symbol = symbol.ContainingSymbol;
+                    skippedCount++;
+                    continue;
                 }
 
-                // Now you have the containing method symbol
-                var containingMethod = symbol as IMethodSymbol;
-                if (containingMethod == null)
+                // Skip if we've already added this caller to this node
+                if (!addedCallers.Add(containingMethod))
                     continue;
 
-                //find refrences
-                var references = await FindAllReferences(containingMethod, solution);
+                //skip if self reference
+                if (SymbolEqualityComparer.Default.Equals(containingMethod, node.ReferencedMethod))
+                {
+                    skippedCount++;
+                    continue;
+                }
 
-                //build new node
-                var newRefNode = await MethodReferenceNode.CreateAsync(references, containingMethod, solution);
+                // Skip if already visited (avoid expensive FindAllReferences call later)
+                if (visited.Any(visitedNode =>
+                    SymbolEqualityComparer.Default.Equals(visitedNode.ReferencedMethod, containingMethod)))
+                {
+                    alreadyVisitedCount++;
+                    continue;
+                }
+
+                Console.WriteLine($"Adding containing method: {containingMethod.ToDisplayString()}");
+                containingMethods.Add(containingMethod);
+            }
+
+            if (skippedCount > 0)
+            {
+                Console.WriteLine($"[INFO] Filtered out {skippedCount} call sites from {node.ReferencedMethod.Name}");
+            }
+
+            if (alreadyVisitedCount > 0)
+            {
+                Console.WriteLine($"[OPTIMIZE] Skipped {alreadyVisitedCount} already-visited methods (avoiding expensive FindAllReferences calls)");
+            }
+
+            // Phase 2: Find references for NEW methods only (slow, but parallelized with caching)
+            var referenceTasks = containingMethods.Select(method =>
+                Task.Run(() => _referenceCache.FindAllReferencesAsync(method))
+            ).ToList();
+
+            var allReferences = await Task.WhenAll(referenceTasks).ConfigureAwait(false);
+
+            // Phase 3: Build nodes and recurse (fast)
+            for (int i = 0; i < containingMethods.Count; i++)
+            {
+                var newRefNode = await MethodReferenceNode.CreateAsync(allReferences[i], containingMethods[i], _solution).ConfigureAwait(false);
                 node.CallerNodes.Add(newRefNode);
 
                 if (visited.Contains(newRefNode, cmp)) continue;
-                await BuildReferenceChain(newRefNode, solution, visited);
+                if (!shallow) await BuildReferenceChain(newRefNode, visited).ConfigureAwait(false);
             }
         }
 
-        private static async Task<IEnumerable<ReferencedSymbol>> FindAllReferences(IMethodSymbol method, Solution solution)
+        private IMethodSymbol? GetContainingMethod(SemanticModel semanticModel, int position)
         {
-            var ret = new List<ReferencedSymbol>();
-            ret.AddRange(await SymbolFinder.FindReferencesAsync(method, solution));
-            return ret;
-        }
+            var symbol = semanticModel.GetEnclosingSymbol(position);
 
-        private static async Task<IEnumerable<ReferencedSymbol>> FindAllReferences(IEnumerable<IMethodSymbol> methods, Solution solution)
-        {
-            var ret = new List<ReferencedSymbol>();
-            foreach (var method in methods)
+            // Walk up to find the first method symbol
+            while (symbol != null && symbol is not IMethodSymbol)
             {
-                ret.AddRange(await SymbolFinder.FindReferencesAsync(method, solution));
+                symbol = symbol.ContainingSymbol;
             }
-            return ret;
+
+            var containingMethod = symbol as IMethodSymbol;
+
+            // Skip over anonymous functions/lambdas to get the real containing method
+            while (containingMethod != null &&
+                   (containingMethod.MethodKind == MethodKind.AnonymousFunction ||
+                    containingMethod.MethodKind == MethodKind.LocalFunction ||
+                    containingMethod.MethodKind == MethodKind.LambdaMethod))
+            {
+                symbol = containingMethod.ContainingSymbol;
+
+                // Walk up to find next method symbol (or give up if we hit non-method symbols)
+                while (symbol != null && symbol is not IMethodSymbol)
+                {
+                    // If we've walked up to a type/namespace level, there's no containing method
+                    if (symbol is INamedTypeSymbol || symbol is INamespaceSymbol)
+                    {
+                        return null;
+                    }
+                    symbol = symbol.ContainingSymbol;
+                }
+
+                // If we broke out because we hit a non-method, stop
+                if (symbol is not IMethodSymbol)
+                    break;
+
+                containingMethod = symbol as IMethodSymbol;
+            }
+
+            // Skip methods from types not in source code (framework/compiled types we can't convert)
+            if (containingMethod != null &&
+                containingMethod.ContainingType?.DeclaringSyntaxReferences.Length == 0)
+            {
+                return null;
+            }
+
+            return containingMethod;
         }
 
-        private static async Task<List<IMethodSymbol>> GetConstructorsFromString(string fullyQualifiedTypeName, Solution solution)
+
+        private async Task<List<IMethodSymbol>> GetConstructorsFromString(string fullyQualifiedTypeName)
         {
             var ret = new List<IMethodSymbol>();
 
             var tasks = new List<Task<Compilation?>>();
-            foreach (var project in solution.Projects)
+            foreach (var project in _solution.Projects)
             {
                 tasks.Add(project.GetCompilationAsync());
             }
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).ConfigureAwait(false);
             foreach (var task in tasks)
             {
                 var compilation = task.Result;
@@ -131,17 +224,17 @@ namespace RandomCodeAnalysis.Analyzers
             return ret;
         }
 
-        private static async Task<List<IMethodSymbol>> GetMethodsFromString(string methodName, string fullyQualifiedTypeName, Solution solution)
+        private async Task<List<IMethodSymbol>> GetMethodsFromString(string methodName, string fullyQualifiedTypeName)
         {
             var ret = new List<IMethodSymbol>();
 
             var tasks = new List<Task<Compilation?>>();
-            foreach (var project in solution.Projects)
+            foreach (var project in _solution.Projects)
             {
                 tasks.Add(project.GetCompilationAsync());
             }
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).ConfigureAwait(false);
             foreach (var task in tasks)
             {
                 var compilation = task.Result;

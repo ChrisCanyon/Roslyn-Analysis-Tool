@@ -11,6 +11,17 @@ namespace RandomCodeAnalysis
 {
     public class CallChainReporter
     {
+        public async Task GenerateAsyncConversionSubReports(MethodReferenceNode topNode, Solution solution)
+        {
+            List<Task> reportTasks = new List<Task>();
+            foreach(var callerNode in topNode.CallerNodes)
+            {
+                reportTasks.Add(GenerateAsyncConversionReport(callerNode, solution));
+            }
+
+            await Task.WhenAll(reportTasks);
+        }
+
         public async Task GenerateAsyncConversionReport(MethodReferenceNode topNode, Solution solution)
         {
             var report = new StringBuilder();
@@ -25,7 +36,8 @@ namespace RandomCodeAnalysis
             report.AppendLine();
 
             // Analyze the call chain
-            await AnalyzeCallChain(topNode, solution, stats, methodDetails, new HashSet<string>());
+            var visitedMethods = new HashSet<string>();  // For preventing duplicates and cycles
+            await AnalyzeCallChain(topNode, solution, stats, methodDetails, visitedMethods);
 
             // Write summary statistics
             report.AppendLine("═══════════════════════════════════════════════════════════════");
@@ -126,7 +138,7 @@ namespace RandomCodeAnalysis
             }
 
             // Write the report to file
-            await WriteReportToFile(report.ToString(), solution);
+            await WriteReportToFile(report.ToString(), topNode.SimpleMethodName, solution);
         }
 
         private async Task AnalyzeCallChain(
@@ -134,13 +146,16 @@ namespace RandomCodeAnalysis
             Solution solution,
             ConversionStats stats,
             List<MethodDetail> methodDetails,
-            HashSet<string> visited)
+            HashSet<string> visitedMethods)
         {
             var methodKey = node.MethodName;
-            if (visited.Contains(methodKey))
+
+            // Check if we've already processed this method (prevents duplicates and cycles)
+            if (visitedMethods.Contains(methodKey))
                 return;
 
-            visited.Add(methodKey);
+            // Mark as visited
+            visitedMethods.Add(methodKey);
 
             var method = node.ReferencedMethod;
             stats.TotalMethods++;
@@ -228,7 +243,7 @@ namespace RandomCodeAnalysis
             // Recurse to callers
             foreach (var caller in node.CallerNodes)
             {
-                await AnalyzeCallChain(caller, solution, stats, methodDetails, visited);
+                await AnalyzeCallChain(caller, solution, stats, methodDetails, visitedMethods);
             }
         }
 
@@ -240,7 +255,7 @@ namespace RandomCodeAnalysis
             return Math.Round((methodTime + callSiteTime) / 60.0, 1);
         }
 
-        private async Task WriteReportToFile(string reportContent, Solution solution)
+        private async Task WriteReportToFile(string reportContent, string methodName, Solution solution)
         {
             try
             {
@@ -250,7 +265,7 @@ namespace RandomCodeAnalysis
                     solutionDir = Directory.GetCurrentDirectory();
                 }
 
-                var reportFileName = $"AsyncConversionReport_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+                var reportFileName = $"{methodName}_AsyncConversionReport_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
                 var reportFilePath = Path.Combine(solutionDir, reportFileName);
 
                 await File.WriteAllTextAsync(reportFilePath, reportContent);

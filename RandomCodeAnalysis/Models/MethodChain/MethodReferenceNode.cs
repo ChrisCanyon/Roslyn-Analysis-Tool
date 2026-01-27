@@ -40,6 +40,7 @@ namespace RandomCodeAnalysis.Models.MethodChain
     public class MethodReferenceNode
     {
         public string MethodName { get; private set; }
+        public string SimpleMethodName { get; private set; }
         public List<MethodReferenceNode> CallerNodes = new List<MethodReferenceNode>();
 
         [JsonIgnore]
@@ -53,6 +54,7 @@ namespace RandomCodeAnalysis.Models.MethodChain
         {
             ReferencedMethod = referencedMethod;
             MethodName = referencedMethod.ToDisplayString();
+            SimpleMethodName = referencedMethod.Name;
         }
 
         public static async Task<MethodReferenceNode> CreateAsync(
