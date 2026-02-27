@@ -185,6 +185,10 @@ namespace RandomCodeAnalysis
             if (method.IsAsync)
             {
                 stats.AlreadyAsync++;
+                methodDetails.Add(detail);
+                // Return early - if this method is already async, its callers already handle
+                // the async properly, so we don't need to include them in this conversion
+                return;
             }
             else
             {
