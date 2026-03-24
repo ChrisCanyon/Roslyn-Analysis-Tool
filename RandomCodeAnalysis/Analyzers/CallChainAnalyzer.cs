@@ -31,12 +31,22 @@ namespace RandomCodeAnalysis.Analyzers
                 Console.WriteLine($"[FindFullMethodChain] Found {methodSymbols.Count} overloads");
             }
 
-            var methodSymbol = methodSymbols.First();
+            IMethodSymbol methodSymbol = null;
+
+            try
+            {
+                methodSymbol = methodSymbols.First();
+            }
+            catch (Exception e)
+            {
+                _ = e;
+            }
+
             Console.WriteLine($"[FindFullMethodChain] Finding references...");
             var references = await _referenceCache.FindAllReferencesAsync(methodSymbols).ConfigureAwait(false);
 
             Console.WriteLine($"[FindFullMethodChain] Creating top node...");
-            var topNode = await MethodReferenceNode.CreateAsync(references,methodSymbol, _solution).ConfigureAwait(false);
+            var topNode = await MethodReferenceNode.CreateAsync(references, methodSymbol, _solution).ConfigureAwait(false);
             Console.WriteLine($"[FindFullMethodChain] Top node has {topNode.CallSites.Count} call sites");
 
             var allNodes = new List<MethodReferenceNode>();

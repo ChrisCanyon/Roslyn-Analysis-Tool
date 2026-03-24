@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
+using RandomCodeAnalysis.Analyzers;
 using System.Diagnostics;
 using System.Reflection;
 
@@ -12,16 +13,17 @@ namespace DependencyAnalyzer.Parsers
     {
         public List<ManualResolveInfo> ManuallyResolvedSymbols;
         public List<ManualDisposeInfo> ManuallyDisposedSymbols;
+        private readonly MethodReferenceCache _referenceCache = new MethodReferenceCache(solution);
 
         public async Task Build()
         {
             var resolvedTask = FindAllManuallyResolvedSymbols();
-            var disposedTask = FindAllManuallyDisposedSymbols();
+            //var disposedTask = FindAllManuallyDisposedSymbols();
 
-            await Task.WhenAll(resolvedTask, disposedTask);
+            await Task.WhenAll(resolvedTask);//, disposedTask);
 
             ManuallyResolvedSymbols = resolvedTask.Result;
-            ManuallyDisposedSymbols = disposedTask.Result;
+            //ManuallyDisposedSymbols = disposedTask.Result;
         }
 
         private async Task<List<IMethodSymbol>> GetMethodsFromString(string methodName, string fullyQualifiedTypeName) {
@@ -61,12 +63,7 @@ namespace DependencyAnalyzer.Parsers
 
         private async Task<IEnumerable<ReferencedSymbol>> FindAllReferences(IEnumerable<IMethodSymbol> methods)
         {
-            var ret = new List<ReferencedSymbol>();
-            foreach (var method in methods)
-            {
-                ret.AddRange(await SymbolFinder.FindReferencesAsync(method, solution));
-            }
-            return ret;
+            return await _referenceCache.FindAllReferencesAsync(methods);
         }
 
         private async Task<List<ManualDisposeInfo>> FindAllManuallyDisposedSymbols()
@@ -349,6 +346,7 @@ namespace DependencyAnalyzer.Parsers
 
         public async Task<List<ManualResolveInfo>> FindAllManuallyResolvedSymbols()
         {
+            Console.WriteLine($"[ManualResolutionParser] Starting manual resolution analysis...");
             var ret = new List<ManualResolveInfo> { };
 
             var resolveTargets = new[]
@@ -378,16 +376,32 @@ namespace DependencyAnalyzer.Parsers
                     ("ResolveAll", "Castle.Windsor.IWindsorContainer")
                 };
 
+            Console.WriteLine($"[ManualResolutionParser] Resolving {resolveTargets.Length} target methods...");
+            var stopwatch = Stopwatch.StartNew();
             List<IMethodSymbol> methods = new List<IMethodSymbol>();
             foreach (var (methodName, fullyQualifiedTypeName) in resolveTargets)
             {
                 methods.AddRange(await GetMethodsFromString(methodName, fullyQualifiedTypeName));
             }
-            var resolveReferences = await FindAllReferences(methods);
+            stopwatch.Stop();
+            Console.WriteLine($"[ManualResolutionParser] Found {methods.Count} method symbols in {stopwatch.ElapsedMilliseconds}ms");
 
-            foreach (var reference in resolveReferences)
-            {
-                foreach (var location in reference.Locations)
+            Console.WriteLine($"[ManualResolutionParser] Finding all references (using cache for {methods.Count} methods)...");
+            stopwatch.Restart();
+            var resolveReferences = await FindAllReferences(methods);
+            stopwatch.Stop();
+            Console.WriteLine($"[ManualResolutionParser] Found {resolveReferences.Count()} referenced symbols in {stopwatch.ElapsedMilliseconds}ms ({stopwatch.Elapsed.TotalMinutes:F2} minutes)");
+
+            // Flatten all locations into a single array
+            var allLocations = resolveReferences
+                .SelectMany(reference => reference.Locations)
+                .ToList();
+            Console.WriteLine($"[ManualResolutionParser] Processing {allLocations.Count} locations in parallel...");
+
+            // Process all locations in parallel
+            int processed = 0;
+            var locationTasks = allLocations.Select(location =>
+                Task.Run(async () =>
                 {
                     var sourceTree = location.Location.SourceTree;
                     var span = location.Location.SourceSpan;
@@ -396,22 +410,44 @@ namespace DependencyAnalyzer.Parsers
                     var node = root.FindNode(span);
 
                     var invocation = node.FirstAncestorOrSelf<InvocationExpressionSyntax>();
-
-                    if (invocation == null) continue;
+                    if (invocation == null) return null;
 
                     var document = solution.GetDocument(sourceTree);
-                    if (document == null) continue;
+                    if (document == null) return null;
 
                     var model = await document.GetSemanticModelAsync();
-                    if (model == null) continue;
+                    if (model == null) return null;
 
-                    if (IsIgnoredClassType(invocation, model)) continue;
+                    if (IsIgnoredClassType(invocation, model)) return null;
 
                     string invocationPath = BuildSimpleInvocationPath(invocation, document);
 
-                    ret.AddRange(GetResolutionInfoFromInvocations(invocation, model, document.Project.Name, invocationPath));
+                    var result = GetResolutionInfoFromInvocations(invocation, model, document.Project.Name, invocationPath);
+
+                    // Progress logging
+                    var currentProcessed = Interlocked.Increment(ref processed);
+                    if (currentProcessed % 100 == 0)
+                    {
+                        Console.WriteLine($"[ManualResolutionParser] Processed {currentProcessed}/{allLocations.Count} locations...");
+                    }
+
+                    return result;
+                })
+            ).ToList();
+
+            var results = await Task.WhenAll(locationTasks);
+            Console.WriteLine($"[ManualResolutionParser] Completed processing all locations");
+
+            // Flatten results and filter out nulls
+            foreach (var result in results)
+            {
+                if (result != null)
+                {
+                    ret.AddRange(result);
                 }
             }
+
+            Console.WriteLine($"[ManualResolutionParser] Found {ret.Count} manual resolution instances");
             return ret;
         }
 

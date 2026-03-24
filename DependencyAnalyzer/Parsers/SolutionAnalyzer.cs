@@ -54,7 +54,7 @@ namespace DependencyAnalyzer.Parsers
 
             var allTypes = new List<INamedTypeSymbol>();
             var registrationInfos = new List<RegistrationInfo>();
-            if (usesMicrosoftDi)
+            if (usesMicrosoftDi && false)
             {
                 var registrationHelper = new MicrosoftDIRegistrationParser();
                 var registrationInfosTask = registrationHelper.GetSolutionRegistrations(solution);
