@@ -15,15 +15,23 @@ namespace DependencyAnalyzer.Parsers
         public List<ManualDisposeInfo> ManuallyDisposedSymbols;
         private readonly MethodReferenceCache _referenceCache = new MethodReferenceCache(solution);
 
-        public async Task Build()
+        public async Task Build(bool includeDisposalAnalysis = true)
         {
             var resolvedTask = FindAllManuallyResolvedSymbols();
-            //var disposedTask = FindAllManuallyDisposedSymbols();
 
-            await Task.WhenAll(resolvedTask);//, disposedTask);
-
-            ManuallyResolvedSymbols = resolvedTask.Result;
-            //ManuallyDisposedSymbols = disposedTask.Result;
+            if (includeDisposalAnalysis)
+            {
+                var disposedTask = FindAllManuallyDisposedSymbols();
+                await Task.WhenAll(resolvedTask, disposedTask);
+                ManuallyResolvedSymbols = resolvedTask.Result;
+                ManuallyDisposedSymbols = disposedTask.Result;
+            }
+            else
+            {
+                Console.WriteLine("[ManualResolutionParser] Skipping disposal analysis (disabled)");
+                ManuallyResolvedSymbols = await resolvedTask;
+                ManuallyDisposedSymbols = new List<ManualDisposeInfo>();
+            }
         }
 
         private async Task<List<IMethodSymbol>> GetMethodsFromString(string methodName, string fullyQualifiedTypeName) {
@@ -68,111 +76,145 @@ namespace DependencyAnalyzer.Parsers
 
         private async Task<List<ManualDisposeInfo>> FindAllManuallyDisposedSymbols()
         {
+            Console.WriteLine($"[ManualResolutionParser] Starting manual disposal analysis...");
             var retTasks = new List<Task<List<ManualDisposeInfo>>>();
 
             var resolveTargets = new[]
             {
                 ("Dispose", "System.IDisposable"),
                 ("DisposeAsync", "System.IAsyncDisposable"),
-                //("Release", "Castle.Windsor.IWindsorContainer"),
+                ("Release", "Castle.Windsor.IWindsorContainer"),
             };
             var comparer = new FullyQualifiedNameComparer();
 
+            Console.WriteLine($"[ManualResolutionParser] Resolving disposal target methods...");
+            var stopwatch = Stopwatch.StartNew();
             List<IMethodSymbol> methods = new List<IMethodSymbol>();
             foreach (var (methodName, fullyQualifiedTypeName) in resolveTargets)
             {
                 methods.AddRange(await GetMethodsFromString(methodName, fullyQualifiedTypeName));
             }
+            stopwatch.Stop();
+            Console.WriteLine($"[ManualResolutionParser] Found {methods.Count} disposal method symbols in {stopwatch.ElapsedMilliseconds}ms");
+
+            Console.WriteLine($"[ManualResolutionParser] Finding all disposal references (using cache)...");
+            stopwatch.Restart();
             var disposeReferences = await FindAllReferences(methods);
+            stopwatch.Stop();
+            Console.WriteLine($"[ManualResolutionParser] Found {disposeReferences.Count()} disposal references in {stopwatch.ElapsedMilliseconds}ms ({stopwatch.Elapsed.TotalMinutes:F2} minutes)");
 
             var disposeReferenceLocations = disposeReferences
                 .SelectMany(r => r.Locations)
                 .Select(l => l.Location)
                 .Where(l => l.IsInSource)
-                .DistinctBy(l => (l.SourceTree?.FilePath, l.SourceSpan.Start));
+                .DistinctBy(l => (l.SourceTree?.FilePath, l.SourceSpan.Start))
+                .ToList();
 
-            foreach (var location in disposeReferenceLocations)
-            {
-                var sourceTree = location.SourceTree;
-                var span = location.SourceSpan;
-                var root = await sourceTree.GetRootAsync();
+            Console.WriteLine($"[ManualResolutionParser] Processing {disposeReferenceLocations.Count} disposal locations in parallel...");
 
-                var node = root.FindNode(span);
+            // Process all locations in parallel instead of sequentially
+            int processed = 0;
+            var locationTasks = disposeReferenceLocations.Select(location =>
+                Task.Run(async () =>
+                {
+                    var sourceTree = location.SourceTree;
+                    var span = location.SourceSpan;
+                    var root = await sourceTree.GetRootAsync();
 
-                var disposeInvocation = node.FirstAncestorOrSelf<InvocationExpressionSyntax>();
+                    var node = root.FindNode(span);
 
-                if (disposeInvocation == null) continue;
+                    var disposeInvocation = node.FirstAncestorOrSelf<InvocationExpressionSyntax>();
 
-                var document = solution.GetDocument(sourceTree);
-                if (document == null) continue;
+                    if (disposeInvocation == null) return null;
 
-                var model = await document.GetSemanticModelAsync();
-                if (model == null) continue;
+                    var document = solution.GetDocument(sourceTree);
+                    if (document == null) return null;
 
-                var disposedClass = GetDisposedClass(disposeInvocation, model);
-                if (disposedClass == null || !solutionAnalyzer.AllTypes.Any(x => comparer.Equals(x, disposedClass))) continue;
+                    var model = await document.GetSemanticModelAsync();
+                    if (model == null) return null;
 
-                if (IsIgnoredClassType(disposeInvocation, model)) continue;
+                    var disposedClass = GetDisposedClass(disposeInvocation, model);
+                    if (disposedClass == null || !solutionAnalyzer.AllTypes.Any(x => comparer.Equals(x, disposedClass))) return null;
 
-                var disposeCallContainingMethodDecl = disposeInvocation.Ancestors()
-                    .OfType<MethodDeclarationSyntax>()
+                    if (IsIgnoredClassType(disposeInvocation, model)) return null;
+
+                    var disposeCallContainingMethodDecl = disposeInvocation.Ancestors()
+                        .OfType<MethodDeclarationSyntax>()
+                        .FirstOrDefault();
+                    if (disposeCallContainingMethodDecl == null) return null;
+
+                    var disposeCallContainingMethod = model.GetDeclaredSymbol(disposeCallContainingMethodDecl) as IMethodSymbol;
+                    if (disposeCallContainingMethod == null) return null;
+
+                    var disposeCallContainingClassDecl = disposeInvocation.Ancestors()
+                    .OfType<ClassDeclarationSyntax>()
                     .FirstOrDefault();
-                if (disposeCallContainingMethodDecl == null) continue;
+                    if (disposeCallContainingClassDecl == null) return null;
 
-                var disposeCallContainingMethod = model.GetDeclaredSymbol(disposeCallContainingMethodDecl) as IMethodSymbol;
-                if (disposeCallContainingMethod == null) continue;
+                    var disposeCallContainingClass = model.GetDeclaredSymbol(disposeCallContainingClassDecl) as INamedTypeSymbol;
+                    if (disposeCallContainingClass == null) return null;
 
-                var disposeCallContainingClassDecl = disposeInvocation.Ancestors()
-                .OfType<ClassDeclarationSyntax>()
-                .FirstOrDefault();
-                if (disposeCallContainingClassDecl == null) continue;
+                    var lineSpan = node.GetLocation().GetLineSpan();
+                    int line = lineSpan.StartLinePosition.Line + 1; // 1-based
+                    string file = Path.GetFileName(lineSpan.Path);
+                    var fileAndLine = $"{file}:{line}";
 
-                var disposeCallContainingClass = model.GetDeclaredSymbol(disposeCallContainingClassDecl) as INamedTypeSymbol;
-                if (disposeCallContainingClass == null) continue;
-
-                var lineSpan = node.GetLocation().GetLineSpan();
-                int line = lineSpan.StartLinePosition.Line + 1; // 1-based
-                string file = Path.GetFileName(lineSpan.Path);
-                var fileAndLine = $"{file}:{line}";
-
-                //Sometimes top level is root
-                //ie factory method lambda
-                if (IsRootMethodInovcation(disposeCallContainingClass))
-                {
-                    var invocationRoot = new InvocationChainFromRoot
+                    //Sometimes top level is root
+                    //ie factory method lambda
+                    List<ManualDisposeInfo> result;
+                    if (IsRootMethodInovcation(disposeCallContainingClass))
                     {
-                        RootClass = disposeCallContainingClass,
-                        RootMethod = disposeCallContainingMethod,
-                        RootInvocation = disposeInvocation,
-                        Project = document.Project.Name,
-                        InvocationPath = disposeCallContainingMethod.ToDisplayString()
-                    };
+                        var invocationRoot = new InvocationChainFromRoot
+                        {
+                            RootClass = disposeCallContainingClass,
+                            RootMethod = disposeCallContainingMethod,
+                            RootInvocation = disposeInvocation,
+                            Project = document.Project.Name,
+                            InvocationPath = disposeCallContainingMethod.ToDisplayString()
+                        };
 
-                    retTasks.Add(GenerateDisposalInfos(disposedClass, fileAndLine, disposeInvocation, [invocationRoot], model, solution));
-                }
-                else
-                {
-                    var visited = new List<IMethodSymbol>();
-                    var currentPath = new Stack<string>();
-                    var rootInvocations = await WalkInvocationChain(disposeCallContainingMethod, solution, currentPath, visited);
-
-                    if (rootInvocations.Count() == 0)
+                        result = await GenerateDisposalInfos(disposedClass, fileAndLine, disposeInvocation, [invocationRoot], model, solution);
+                    }
+                    else
                     {
-                        Console.WriteLine($"Unable to determine root invocation of {disposeCallContainingMethod.ToDisplayString()}:{disposeInvocation.ToFullString()}", ConsoleColor.Cyan);
+                        var visited = new List<IMethodSymbol>();
+                        var currentPath = new Stack<string>();
+                        // Limit depth to prevent exponential explosion
+                        var rootInvocations = await WalkInvocationChain(disposeCallContainingMethod, solution, currentPath, visited, maxDepth: 5);
+
+                        if (rootInvocations.Count() == 0)
+                        {
+                            Console.WriteLine($"Unable to determine root invocation of {disposeCallContainingMethod.ToDisplayString()}:{disposeInvocation.ToFullString()}");
+                        }
+
+                        result = await GenerateDisposalInfos(disposedClass, fileAndLine, disposeInvocation, rootInvocations, model, solution);
                     }
 
-                    retTasks.Add(GenerateDisposalInfos(disposedClass, fileAndLine, disposeInvocation, rootInvocations, model, solution));
+                    // Progress logging
+                    var currentProcessed = Interlocked.Increment(ref processed);
+                    if (currentProcessed % 100 == 0)
+                    {
+                        Console.WriteLine($"[ManualResolutionParser] Processed {currentProcessed}/{disposeReferenceLocations.Count} disposal locations...");
+                    }
+
+                    return result;
+                })
+            ).ToList();
+
+            var results = await Task.WhenAll(locationTasks);
+            Console.WriteLine($"[ManualResolutionParser] Completed processing all disposal locations");
+
+            // Flatten results and filter out nulls
+            var ret = new List<ManualDisposeInfo>();
+            foreach (var result in results)
+            {
+                if (result != null)
+                {
+                    ret.AddRange(result);
                 }
             }
 
-            var ret = new List<ManualDisposeInfo>();
-
-            await Task.WhenAll(retTasks);
-            foreach (var task in retTasks)
-            {
-                ret.AddRange(task.Result);
-            }
-
+            Console.WriteLine($"[ManualResolutionParser] Found {ret.Count} manual disposal sites");
             return ret;
         }
 
@@ -222,17 +264,25 @@ namespace DependencyAnalyzer.Parsers
             return ret;
         }
 
-        private async Task<List<InvocationChainFromRoot>> WalkInvocationChain(IMethodSymbol method, Solution solution, Stack<string> path, List<IMethodSymbol> visited)
+        private async Task<List<InvocationChainFromRoot>> WalkInvocationChain(IMethodSymbol method, Solution solution, Stack<string> path, List<IMethodSymbol> visited, int maxDepth = 10)
         {
             var ret = new List<InvocationChainFromRoot>();
 
+            // Limit recursion depth to prevent exponential explosion
+            if (path.Count >= maxDepth)
+            {
+                Console.WriteLine($"[WalkInvocationChain] Max depth {maxDepth} reached for {method.ToDisplayString()}");
+                return ret;
+            }
+
             if (path.Contains(method.ToDisplayString())) return ret;
             if (visited.Any(x => x.ToDisplayString() == method.ToDisplayString())) return ret;
-            
+
             visited.Add(method);
             path.Push(method.ToDisplayString());
 
-            var references = await SymbolFinder.FindReferencesAsync(method, solution);
+            // Use the cache instead of direct SymbolFinder call for better performance
+            var references = await _referenceCache.FindAllReferencesAsync(method);
             foreach (var reference in references)
             {
                 foreach (var location in reference.Locations)
@@ -284,7 +334,7 @@ namespace DependencyAnalyzer.Parsers
                     }
                     else
                     {
-                        ret.AddRange(await WalkInvocationChain(referencedFromMethod, solution, path, visited));
+                        ret.AddRange(await WalkInvocationChain(referencedFromMethod, solution, path, visited, maxDepth));
                     }
                 }
             }

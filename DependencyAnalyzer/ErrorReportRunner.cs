@@ -300,7 +300,8 @@ namespace DependencyAnalyzer
             path.Push(node.ImplementationType);
 
             var manualResolutions = manualResolutionParser.ManuallyResolvedSymbols
-                .Where(x => node.SatisfiesDependency(x.ResolvedType) && x.Project == node.ProjectName);
+                ?.Where(x => node.SatisfiesDependency(x.ResolvedType) && x.Project == node.ProjectName)
+                ?? Enumerable.Empty<ManualResolveInfo>();
             foreach (var manualResolution in manualResolutions)
             {
                 resolveNotes.AppendLine($"{node.ClassName} manual resolutions", ConsoleColor.Yellow);
@@ -309,7 +310,8 @@ namespace DependencyAnalyzer
 
             //TODO for single nodes we need to check if anything that consumes the node is released
             var disposals = manualResolutionParser.ManuallyDisposedSymbols
-                .Where(x => node.SatisfiesDependency(x.DisposedType) && node.ProjectName == x.Project).ToList();
+                ?.Where(x => node.SatisfiesDependency(x.DisposedType) && node.ProjectName == x.Project).ToList()
+                ?? new List<ManualDisposeInfo>();
 
             foreach (var disposalInfo in disposals)
             {
@@ -456,6 +458,115 @@ namespace DependencyAnalyzer
             return sb;
         }
 
+        public ColoredStringBuilder GenerateCaptiveDependencyReport(DependencyNode? startNode, string project, bool entireProject, bool allControllers)
+        {
+            var sb = new ColoredStringBuilder();
+
+            if (!entireProject && !allControllers && startNode != null)
+            {
+                sb.AppendLine($"Captive Dependency Analysis for {startNode.ClassName} [{startNode.Lifetime}]", ConsoleColor.Cyan);
+                sb.AppendLine($"Showing all consumers with longer lifetime than {startNode.Lifetime}:", ConsoleColor.White);
+                sb.AppendLine("", ConsoleColor.White);
+
+                // Find all nodes that depend on this node and have a longer lifetime
+                var longerLivedConsumers = new List<DependencyNode>();
+                FindLongerLivedConsumers(startNode, startNode, longerLivedConsumers, new HashSet<DependencyNode>());
+
+                if (longerLivedConsumers.Count == 0)
+                {
+                    sb.AppendLine($"✓ No captive dependency issues found for {startNode.ClassName}", ConsoleColor.Green);
+                }
+                else
+                {
+                    sb.AppendLine($"⚠ Found {longerLivedConsumers.Count} potential captive dependency issues:", ConsoleColor.Yellow);
+                    sb.AppendLine("", ConsoleColor.White);
+
+                    // Group by lifetime for better readability
+                    var groupedByLifetime = longerLivedConsumers
+                        .OrderByDescending(x => x.Lifetime)
+                        .GroupBy(x => x.Lifetime);
+
+                    foreach (var group in groupedByLifetime)
+                    {
+                        sb.AppendLine($"  [{group.Key}] consumers:", ConsoleColor.Red);
+                        foreach (var consumer in group.OrderBy(x => x.ClassName))
+                        {
+                            sb.AppendLine($"    • {consumer.ClassName}", ConsoleColor.Gray);
+
+                            // Show the path from consumer to the target node
+                            var paths = FindPathsFromConsumerToTarget(consumer, startNode, new Stack<DependencyNode>(), new List<List<DependencyNode>>());
+                            if (paths.Count > 0 && paths[0].Count > 1)
+                            {
+                                sb.Append($"      Path: ", ConsoleColor.DarkGray);
+                                var path = paths[0];
+                                for (int i = 0; i < path.Count; i++)
+                                {
+                                    if (i > 0) sb.Append(" → ", ConsoleColor.DarkGray);
+                                    sb.Append(path[i].ClassName, ConsoleColor.DarkGray);
+                                }
+                                sb.AppendLine("", ConsoleColor.White);
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                sb.AppendLine("This report requires a single node to be selected.", ConsoleColor.Red);
+            }
+
+            return sb;
+        }
+
+        private void FindLongerLivedConsumers(DependencyNode targetNode, DependencyNode currentNode, List<DependencyNode> results, HashSet<DependencyNode> visited)
+        {
+            if (!visited.Add(currentNode))
+                return;
+
+            foreach (var consumer in currentNode.DependedOnBy)
+            {
+                if (consumer.Lifetime > targetNode.Lifetime && !results.Contains(consumer))
+                {
+                    results.Add(consumer);
+                }
+
+                // Recursively check consumers of consumers
+                FindLongerLivedConsumers(targetNode, consumer, results, visited);
+            }
+        }
+
+        private List<List<DependencyNode>> FindPathsFromConsumerToTarget(DependencyNode from, DependencyNode target, Stack<DependencyNode> currentPath, List<List<DependencyNode>> allPaths)
+        {
+            if (currentPath.Contains(from))
+                return allPaths;
+
+            currentPath.Push(from);
+
+            if (from == target)
+            {
+                allPaths.Add(currentPath.Reverse().ToList());
+            }
+            else
+            {
+                foreach (var dependency in from.DependsOn)
+                {
+                    if (dependency == target || dependency.DependedOnBy.Contains(target))
+                    {
+                        FindPathsFromConsumerToTarget(dependency, target, currentPath, allPaths);
+                        if (allPaths.Count > 0) break; // Stop after finding first path
+                    }
+                }
+            }
+
+            currentPath.Pop();
+            return allPaths;
+        }
+
+        public ColoredStringBuilder GenerateTransientManualResolutionReport(DependencyNode? startNode, string project, bool entireProject, bool allControllers)
+        {
+           
+        }
+
         public void SearchForLifetimeViolations(IEnumerable<DependencyNode> searchNodes, ColoredStringBuilder sb)
         {
             var issues = new List<DependencyMismatch>();
@@ -484,6 +595,7 @@ namespace DependencyAnalyzer
                 }
             }
         }
+
         private void TODO(DependencyNode node, Stack<INamedTypeSymbol> path, List<DependencyNode> visitedNodes, ColoredStringBuilder sb)
         {
             //TODO stop referencing this

@@ -110,6 +110,8 @@ async function loadTextReports() {
     fetchTextReport("ManualLifecycleManagement", "output-manual-lifestyle");
     fetchTextReport("UnusedMethods", "output-unused-methods");
     fetchTextReport("ManualInstantiation", "output-manual-instantiation");
+    fetchTextReport("CaptiveDependencies", "output-captive-dependencies");
+    fetchTextReport("TransientManualResolutions", "output-transient-manual-resolutions");
 };
 
 async function fetchTextReport(endpoint, outputId){

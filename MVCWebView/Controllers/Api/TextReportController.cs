@@ -82,6 +82,8 @@ namespace MVCWebView.Controllers.Api
                 "ManualLifecycleManagement" => _runner.GenerateManualLifecycleManagementReport(node, project, entireProject, allControllers),
                 "UnusedMethods" => _runner.GenerateUnusedMethodsReport(node, project, entireProject, allControllers),
                 "ManualInstantiation" => _runner.GenerateManualInstantiationReport(node, project, entireProject, allControllers),
+                "CaptiveDependencies" => _runner.GenerateCaptiveDependencyReport(node, project, entireProject, allControllers),
+                "TransientManualResolutions" => _runner.GenerateTransientManualResolutionReport(node, project, entireProject, allControllers),
                 _ => null
             };
 
