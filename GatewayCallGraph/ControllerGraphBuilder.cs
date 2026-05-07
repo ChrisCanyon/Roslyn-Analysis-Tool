@@ -174,21 +174,25 @@ public sealed class ControllerGraphBuilder
                 }
                 var hasInSourceImpls = inSourceImpls.Count > 0 && inSourceImpls.Count <= _maxFanout;
 
-                // Routing-vs-leaf rule: if the callee is an interface (or
-                // abstract/virtual) AND it has in-source impls we'll be fanning
-                // out into, treat it as a *routing* node — DON'T tag it as a
-                // boundary even if a seed/inferrer match says we should. The
-                // real boundary lives on the impl(s), where the actual I/O
-                // pattern (DB vs HTTP vs mixed) is visible. This means a single
-                // interface dispatched to two impls — one DB-touching, one
-                // HTTP-touching — produces TWO boundary nodes with different
-                // colors, instead of one ambiguous interface box.
+                // Routing-vs-leaf rule: if the callee is an *interface* method
+                // AND it has in-source impls, treat it as a routing node (don't
+                // tag it as a boundary). The interface itself is never directly
+                // callable — every call goes through to an impl, so the real
+                // boundary lives on the impl(s) where the actual I/O pattern is
+                // visible. A single interface dispatched to two impls — one
+                // DB-touching, one HTTP-touching — produces TWO boundary nodes
+                // with different colors, not one ambiguous interface box.
                 //
-                // If there are no in-source impls (external SDK interface), the
-                // interface itself is the surface — fall back to the original
-                // behavior and tag it.
+                // For *virtual class methods* (concrete base + overriding
+                // subclass), the base IS itself directly callable and is its
+                // own boundary. Tag the base AND fan out to overrides — both
+                // can be reached at runtime depending on the actual instance.
+                //
+                // No in-source impls (external SDK interface, sealed class):
+                // the callee itself is the surface — tag it normally.
+                var calleeIsInterface = callee.ContainingType?.TypeKind == TypeKind.Interface;
                 BoundaryCategory? effectiveBoundary;
-                if (hasInSourceImpls)
+                if (hasInSourceImpls && calleeIsInterface)
                 {
                     effectiveBoundary = null; // interface is a routing node
                 }
@@ -213,14 +217,12 @@ public sealed class ControllerGraphBuilder
                 var callSite = BuildCallSite(invocation);
                 graph.AddEdge(callerId, calleeId, callSite, loop, conditional);
 
-                // Boundary leaf (no in-source impls case): by default the walk
-                // stops here so the boundary is the visible leaf. With
-                // expandPastBoundaries we keep going.
-                if (effectiveBoundary != null && !expandPastBoundaries) continue;
-
                 // Interface / virtual dispatch: fan out into in-source impls.
                 // Each impl is classified independently — different impls can
-                // have different boundary categories.
+                // have different boundary categories. We do this BEFORE the
+                // boundary-leaf short-circuit so a tagged virtual base class
+                // (e.g. UtilityBillingRestApi.GetReceivables) still shows its
+                // overrides (MunisAutopayRestApi.GetReceivables) as siblings.
                 if (hasInSourceImpls)
                 {
                     // The interface "would have been" tagged with this category
@@ -257,6 +259,12 @@ public sealed class ControllerGraphBuilder
                         await WalkAsync(graph, impl, depth + 1, visited, expandPastBoundaries, hiddenImplFqns).ConfigureAwait(false);
                     }
                 }
+
+                // Boundary leaf: by default the walk stops at the callee body
+                // so the boundary is the visible leaf. Dispatch fan-out above
+                // already added the override/impl nodes; we just don't recurse
+                // into the callee's own body. With expandPastBoundaries we do.
+                if (effectiveBoundary != null && !expandPastBoundaries) continue;
 
                 // Recurse into the callee's own body if it has one in source.
                 if (!HasSourceInSolution(callee)) continue; // BCL / third-party
