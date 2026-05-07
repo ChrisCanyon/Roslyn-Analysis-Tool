@@ -156,9 +156,57 @@ async function renderCurrentView(rootFqn) {
             currentGraph = graph; // stash so click handler can probe for impls
             updateStats(graph);
         }
+
+        // A view is now exportable. Clear any stale status from a previous
+        // export so the user doesn't see "exported to X" pinned to a
+        // different graph.
+        const exportBtn = document.getElementById("exportBtn");
+        if (exportBtn) exportBtn.disabled = false;
+        setExportStatus("", null);
     } finally {
         RoslynGraphUi.hideLoading();
     }
+}
+
+/**
+ * POST the current view's params to /api/CallGraph/Export. Mirrors the GET
+ * /Graph + /GraphJson params exactly so the dump matches what the user sees.
+ * Server returns the absolute folder path; we surface it under the button.
+ */
+async function exportCurrentView() {
+    if (!currentRootFqn) return;
+    const btn = document.getElementById("exportBtn");
+    if (btn) btn.disabled = true;
+    setExportStatus("Exporting…", null);
+
+    const params = new URLSearchParams();
+    params.set("fqn", currentRootFqn);
+    if (isExpandEnabled()) params.set("expand", "true");
+    if (hiddenImplFqns.size > 0) params.set("hideImpls", [...hiddenImplFqns].join("|"));
+    if (currentFocus) params.set("focus", currentFocus);
+
+    try {
+        const resp = await fetch(`/api/CallGraph/Export?${params.toString()}`, { method: "POST" });
+        if (!resp.ok) {
+            const errText = await resp.text();
+            setExportStatus(`Export failed: ${errText}`, "error");
+            return;
+        }
+        const data = await resp.json();
+        setExportStatus(`Exported to ${data.folder}`, "success");
+    } catch (err) {
+        setExportStatus(`Export failed: ${err.message || err}`, "error");
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function setExportStatus(text, kind) {
+    const el = document.getElementById("exportStatus");
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove("success", "error");
+    if (kind) el.classList.add(kind);
 }
 
 function updateStats(graph) {

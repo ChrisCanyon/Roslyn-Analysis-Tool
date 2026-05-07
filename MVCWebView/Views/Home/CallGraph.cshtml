@@ -25,6 +25,16 @@
     .focus-banner .focus-target { color: #ffd54f; }
     .focus-banner .focus-clear { color: #4fc3f7; margin-left: 6px; text-decoration: none; font-size: 10px; }
     .focus-banner .focus-clear:hover { color: #81d4fa; text-decoration: underline; }
+    /* Export-current-view control. Sits under the focus banner; the status line
+       below it shows the destination folder after a successful export, or an
+       error message in red on failure. */
+    .export-controls { margin: 6px 0; }
+    .export-btn { background: #2e7d32; color: white; border: none; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; }
+    .export-btn:disabled { background: #2a3442; color: #607d8b; cursor: default; }
+    .export-btn:not(:disabled):hover { background: #388e3c; }
+    .export-status { font-size: 10px; color: #90a4ae; margin-top: 4px; word-break: break-all; }
+    .export-status.success { color: #81c784; }
+    .export-status.error { color: #ef5350; }
     /* Interface-impls picker (in the side panel). Lets the user toggle
        individual implementations on/off in batch, then commit with Apply. */
     .ii-controls { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
@@ -107,6 +117,14 @@
                     <span class="focus-label">Focused on:</span>
                     <span class="focus-target"></span>
                     <a href="javascript:void(0)" class="focus-clear" onclick="clearFocus()">[clear]</a>
+                </div>
+
+                <div class="export-controls">
+                    <button class="export-btn" id="exportBtn" onclick="exportCurrentView()" disabled
+                            title="Dump SVG + raw JSON + metadata to disk for offline analysis">
+                        Export current view
+                    </button>
+                    <div id="exportStatus" class="export-status"></div>
                 </div>
 
                 <h5 class="gp-header mt-3">Stats</h5>
