@@ -14,6 +14,42 @@
 <style>
     /* Side-panel headers — accent so they pop against the black background. */
     .gp-header { color: #4fc3f7; letter-spacing: 0.02em; border-bottom: 1px solid #2a3442; padding-bottom: 4px; }
+    /* Focus indicator under the current root. Yellow because focus is a
+       transient mode the user should notice they're in. */
+    .focus-banner {
+        background: #2a2520; border-left: 3px solid #ffd54f;
+        padding: 4px 8px; margin: 4px 0;
+        font-size: 11px; color: #cfd8dc; word-break: break-all;
+    }
+    .focus-banner .focus-label { color: #ffd54f; font-weight: bold; margin-right: 4px; }
+    .focus-banner .focus-target { color: #ffd54f; }
+    .focus-banner .focus-clear { color: #4fc3f7; margin-left: 6px; text-decoration: none; font-size: 10px; }
+    .focus-banner .focus-clear:hover { color: #81d4fa; text-decoration: underline; }
+    /* Interface-impls picker (in the side panel). Lets the user toggle
+       individual implementations on/off in batch, then commit with Apply. */
+    .ii-controls { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
+    .ii-apply { background: #1565c0; color: white; border: none; padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; }
+    .ii-apply:disabled { background: #2a3442; color: #607d8b; cursor: default; }
+    .ii-apply:not(:disabled):hover { background: #1976d2; }
+    .ii-reset { background: transparent; color: #90a4ae; border: 1px solid #2a3442; padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; }
+    .ii-reset:hover { color: #ef5350; border-color: #ef5350; }
+    .ii-empty { color: #607d8b; font-style: italic; font-size: 11px; }
+    .ii-iface { margin-bottom: 6px; }
+    .ii-iface-header {
+        cursor: pointer; user-select: none; color: #cfd8dc;
+        padding: 3px 0; word-break: break-all; font-size: 11px;
+    }
+    .ii-iface-header:hover { color: #4fc3f7; }
+    .ii-caret { display: inline-block; width: 10px; color: #90a4ae; }
+    .ii-impl-list { padding-left: 14px; display: none; }
+    .ii-iface.expanded .ii-impl-list { display: block; }
+    .ii-iface.expanded .ii-caret::before { content: "▾"; }
+    .ii-iface:not(.expanded) .ii-caret::before { content: "▸"; }
+    .ii-impl { display: block; padding: 2px 0; font-size: 11px; word-break: break-all; cursor: pointer; }
+    .ii-impl input[type="checkbox"] { margin-right: 4px; vertical-align: middle; }
+    .ii-impl-pending { color: #ffd54f; }     /* will be hidden after apply */
+    .ii-impl-pending-show { color: #81c784; } /* will be shown after apply */
+    .ii-pending-badge { background: #ffd54f; color: black; border-radius: 8px; padding: 0 6px; font-size: 10px; margin-left: 4px; }
     /* Call-count severity scale. degree 0 stays neutral; N is yellow; each
        additional power gets hotter. The pre containers are already monospace. */
     .cc-row    { display: block; }
@@ -34,7 +70,7 @@
 
 @await Html.PartialAsync("_LoadingOverlay")
 
-<div class="bg-light p-2 border-bottom" style="position: relative; height: 55px;">
+<div class="bg-light p-2 border-bottom" style="position: relative; height: 55px; z-index: 100;">
     <div style="position: absolute; left: 0; padding-left: 1em;">
         <button class="btn btn-outline-secondary" onclick="loadPrevious()">&lt; Back</button>
     </div>
@@ -42,6 +78,10 @@
         <input id="controllerInput" class="form-control" style="width: 720px"
                placeholder="Type any part of the namespace, controller, or method..." autocomplete="off" />
         <button class="btn btn-outline-primary" style="width: max-content;" onclick="loadController()">Load Graph</button>
+        <div class="form-check form-switch" style="white-space: nowrap; margin-left: 0.75rem;" title="When on, the walker keeps descending into a node's body even after tagging it as a boundary. The graph gets much larger.">
+            <input class="form-check-input" type="checkbox" id="expandToggle" onchange="onExpandToggleChanged()" />
+            <label class="form-check-label" for="expandToggle">Expand past boundaries</label>
+        </div>
     </div>
     <div class="d-flex align-items-center gap-2" style="position: absolute; right: 0; padding-right: 1em;">
         <a class="btn btn-outline-secondary" href="/">Dependency UI</a>
@@ -63,14 +103,33 @@
                 <h5 class="gp-header">Current root</h5>
                 <pre id="currentRoot">(none)</pre>
 
+                <div id="focusBanner" class="focus-banner" style="display: none;">
+                    <span class="focus-label">Focused on:</span>
+                    <span class="focus-target"></span>
+                    <a href="javascript:void(0)" class="focus-clear" onclick="clearFocus()">[clear]</a>
+                </div>
+
                 <h5 class="gp-header mt-3">Stats</h5>
                 <pre id="graphStats">(empty)</pre>
+
+                <h5 class="gp-header mt-3">
+                    Interface impls
+                    <span id="iiPendingBadge" class="ii-pending-badge" style="display:none;">0</span>
+                </h5>
+                <div class="ii-controls">
+                    <button class="ii-apply" id="iiApplyBtn" onclick="applyImplChanges()" disabled>Apply</button>
+                    <button class="ii-reset" onclick="resetImplChanges()">Reset all</button>
+                </div>
+                <div id="interfaceImplList" class="ii-empty">(none — load a graph that has interfaces with impls)</div>
 
                 <h5 class="gp-header mt-3">Boundary call counts</h5>
                 <pre id="boundaryCallCounts">(none)</pre>
 
                 <h5 class="gp-header mt-3">Loop edges</h5>
                 <pre id="loopList">(none)</pre>
+
+                <h5 class="gp-header mt-3">Conditional edges</h5>
+                <pre id="conditionalList">(none)</pre>
             </div>
         </div>
     </div>

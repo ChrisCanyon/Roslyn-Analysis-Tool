@@ -30,6 +30,53 @@ public enum LoopKind
     EnumerableLoop,
 }
 
+/// <summary>
+/// Distinguishes the syntactic shape of an enclosing conditional. We collapse
+/// "else if" into <see cref="If"/> with the chained condition; "else" branches
+/// without a condition use <see cref="Else"/>; ternaries use <see cref="Ternary"/>.
+/// </summary>
+public enum ConditionalKind
+{
+    None,
+    If,
+    Else,
+    Ternary,
+}
+
+public sealed record ConditionalInfo
+{
+    [JsonPropertyName("kind")]
+    public ConditionalKind Kind { get; init; }
+
+    /// <summary>
+    /// Truncated, whitespace-normalized text of the condition. For an
+    /// <see cref="ConditionalKind.If"/> this is the predicate (e.g.
+    /// <c>"x != null && x.Count > 0"</c>). For <see cref="ConditionalKind.Else"/>
+    /// it is empty (the `else` branch has no condition of its own; the negation
+    /// of the parent `if` is implied). For <see cref="ConditionalKind.Ternary"/>
+    /// it is the condition expression of the `?:` operator. Truncated to keep
+    /// edge labels readable.
+    /// </summary>
+    [JsonPropertyName("condition")]
+    public string Condition { get; init; } = "";
+
+    [JsonPropertyName("file")]
+    public string? File { get; init; }
+
+    /// <summary>Line of the if/else/ternary keyword (so users can jump to it).</summary>
+    [JsonPropertyName("line")]
+    public int Line { get; init; }
+
+    /// <summary>
+    /// True if the call sits in the `else` arm of the enclosing if. We carry
+    /// this as a flag rather than synthesizing "!(cond)" text because the raw
+    /// condition is already in <see cref="Condition"/> and inverting it
+    /// programmatically is misleading for non-boolean predicates.
+    /// </summary>
+    [JsonPropertyName("isElseBranch")]
+    public bool IsElseBranch { get; init; }
+}
+
 public sealed record LoopInfo
 {
     [JsonPropertyName("kind")]
@@ -111,6 +158,13 @@ public sealed class GraphEdge
     /// <summary>null if the call site is not inside any loop.</summary>
     [JsonPropertyName("loop")]
     public LoopInfo? Loop { get; init; }
+
+    /// <summary>
+    /// null if the call site is not inside any if/else/ternary. Independent of
+    /// <see cref="Loop"/> — a call can be inside both a loop and a conditional.
+    /// </summary>
+    [JsonPropertyName("conditional")]
+    public ConditionalInfo? Conditional { get; init; }
 
     /// <summary>
     /// True for synthetic edges that connect an interface method to one of its
@@ -254,7 +308,7 @@ public sealed class CallGraph
     /// Adds an edge if not already present. Uniqueness key is (from, to, callSite.file, callSite.line)
     /// so the same caller→callee relationship at multiple distinct call sites produces multiple edges.
     /// </summary>
-    public void AddEdge(int from, int to, CallSite site, LoopInfo? loop)
+    public void AddEdge(int from, int to, CallSite site, LoopInfo? loop, ConditionalInfo? conditional = null)
     {
         var key = (from, to, site.File, site.Line);
         if (!_edgeKeys.Add(key)) return;
@@ -264,6 +318,7 @@ public sealed class CallGraph
             To = to,
             CallSite = site,
             Loop = loop,
+            Conditional = conditional,
         });
     }
 

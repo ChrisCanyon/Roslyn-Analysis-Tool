@@ -77,6 +77,18 @@ public static class BoundarySeeds
         Style: "filled,bold");
 
     /// <summary>
+    /// Visual: hex-shape, purple. Used when a boundary touches both HTTP and
+    /// DB downstream so the leaf reads "this hits the network AND a database"
+    /// at a glance. Matches the purple "leads to mixed" edge color so the
+    /// path's color flows into the leaf's color.
+    /// </summary>
+    private static readonly NodeStyle MixedIoStyle = new(
+        Shape: "hexagon",
+        FillColor: "#e1bee7",
+        StrokeColor: "#6a1b9a",
+        Style: "filled,bold");
+
+    /// <summary>
     /// All registered boundary categories. Initialized lazily on first access so
     /// loading the JSON file happens once.
     /// </summary>
@@ -103,7 +115,13 @@ public static class BoundarySeeds
             // data-access classes without needing an exact-member entry.
             Patterns: new[] { new BoundaryMatcher(TypePattern: @".*Repository", MethodPattern: ".*") });
 
-        return new[] { externalSystemGateway, databaseQuery };
+        var mixedIo = new BoundaryCategory(
+            Name: "mixed_io",
+            DisplayName: "Mixed I/O (DB + External)",
+            Style: MixedIoStyle,
+            Members: Array.Empty<(string, string)>());
+
+        return new[] { externalSystemGateway, databaseQuery, mixedIo };
     }
 
     /// <summary>

@@ -137,15 +137,27 @@
 
         const nodes = svg.querySelectorAll("g.node");
         nodes.forEach((node) => {
-            const titleElement = node.querySelector("title");
-            if (!titleElement) return;
-            const nodeId = titleElement.textContent ? titleElement.textContent.trim() : null;
-            if (!nodeId) return;
+            // Graphviz emits two pieces of identifying text per node:
+            //   <title>n0</title>                   <-- internal node id, useless to host
+            //   <a xlink:title="Foo.Bar.Baz()">     <-- the `tooltip=` attribute we set, this is the FQN
+            // The host's onNodeClick callback wants the FQN. Prefer xlink:title;
+            // fall back to <title> for any node that isn't wrapped in an <a>.
+            let identifier = null;
+            const anchor = node.querySelector("a");
+            if (anchor) {
+                identifier = anchor.getAttribute("xlink:title")
+                    || anchor.getAttributeNS("http://www.w3.org/1999/xlink", "title");
+            }
+            if (!identifier) {
+                const titleElement = node.querySelector("title");
+                identifier = titleElement && titleElement.textContent ? titleElement.textContent.trim() : null;
+            }
+            if (!identifier) return;
 
             node.style.cursor = "pointer";
             node.addEventListener("click", () => {
                 if (typeof config.onNodeClick === "function") {
-                    config.onNodeClick(nodeId);
+                    config.onNodeClick(identifier);
                 }
             });
         });

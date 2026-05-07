@@ -16,6 +16,15 @@ public static class IoPrimitives
     public const string ExternalSystemGateway = "external_system_gateway";
     public const string DatabaseQuery = "database_query";
 
+    /// <summary>
+    /// Synthetic category used when a single boundary node touches both an
+    /// external HTTP path AND a database path downstream. Not assignable from
+    /// the primitive list directly — only the inferrer produces it, by
+    /// detecting that <see cref="ExternalSystemGateway"/> and
+    /// <see cref="DatabaseQuery"/> are both reachable from a method's body.
+    /// </summary>
+    public const string MixedIo = "mixed_io";
+
     public sealed record Primitive(string TypeFqn, string MethodName, string Category);
 
     public static readonly IReadOnlyList<Primitive> All = new Primitive[]

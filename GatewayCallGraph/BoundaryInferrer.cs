@@ -83,12 +83,10 @@ public sealed class BoundaryInferrer
     /// Walk the method's body. Return the boundary category if the body reaches
     /// an I/O primitive (directly or via any callee), null otherwise.
     ///
-    /// When a method touches multiple categories (e.g. an HTTP-egress wrapper
-    /// that also reads a config from DB to build the request), we prefer
-    /// <see cref="IoPrimitives.ExternalSystemGateway"/>. Reasoning: a *Helper
-    /// or *Facade that talks HTTP usually does some DB reads incidentally, but
-    /// its *purpose* is the external call. Reversing the priority would tag
-    /// HTTP-shaped surfaces as "database_query", which is wrong.
+    /// When a method touches both external HTTP and database paths in the same
+    /// body, we tag it <see cref="IoPrimitives.MixedIo"/> rather than picking
+    /// one. The mixed_io leaf renders purple, matching the purple "leads to
+    /// mixed" edge color, so the visual is consistent end-to-end.
     /// </summary>
     private async Task<string?> ComputeTaintAsync(IMethodSymbol method, int depth)
     {
@@ -115,8 +113,8 @@ public sealed class BoundaryInferrer
         if (method.DeclaringSyntaxReferences.Length == 0) return null;
         if (method.ContainingType?.DeclaringSyntaxReferences.Length == 0) return null;
 
-        // Track every category seen so we can prefer external_system_gateway
-        // over database_query when both appear.
+        // Track every category seen — both-of-{external,DB} collapses to
+        // mixed_io after the walk; a single category passes through as-is.
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         // Also: if this method is itself an intent surface (e.g. *Facade) and
@@ -197,8 +195,15 @@ public sealed class BoundaryInferrer
             }
         }
 
-        // Prefer external HTTP over DB when both are reachable. (See doc comment.)
-        if (seen.Contains(IoPrimitives.ExternalSystemGateway)) return IoPrimitives.ExternalSystemGateway;
+        // When both external HTTP and DB are reachable from a single method,
+        // surface that as mixed_io rather than picking one. Loses some specificity
+        // (a *Facade hitting a config table to build an HTTP request reads as
+        // mixed) but it's the truthful answer and matches the "leads to mixed"
+        // edge color so the path color flows into the leaf.
+        var hasExternal = seen.Contains(IoPrimitives.ExternalSystemGateway);
+        var hasDb = seen.Contains(IoPrimitives.DatabaseQuery);
+        if (hasExternal && hasDb) return IoPrimitives.MixedIo;
+        if (hasExternal) return IoPrimitives.ExternalSystemGateway;
         if (seen.Count > 0) return seen.First();
 
         // "Intent surface that wraps an opaque library": if this method is on a

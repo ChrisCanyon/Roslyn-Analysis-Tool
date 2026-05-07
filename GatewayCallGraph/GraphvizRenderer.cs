@@ -14,6 +14,8 @@ namespace GatewayCallGraph;
 ///   - enumerable_loop edges -> purple dashed + label ".<subkind>() @line N"
 ///   - dispatch edges        -> grey dashed (interface -> implementation)
 ///   - normal edges          -> grey
+///   - if/else/ternary edges append "@line if <cond>" to whatever label they had,
+///     so a foreach inside an if shows both annotations on the same edge label.
 /// </summary>
 public static class GraphvizRenderer
 {
@@ -26,6 +28,16 @@ public static class GraphvizRenderer
         // reachable downstream (i.e. via outgoing edges, transitively, until a
         // boundary node is hit). Used to tint edges by where they lead.
         var reachable = ComputeReachableBoundaryCategories(graph);
+
+        // Count outgoing dispatch edges per node so the renderer can pick a
+        // solid line when an interface has exactly one impl (no real dispatch
+        // ambiguity) and a dashed line when there are multiple.
+        var dispatchOutDegree = new Dictionary<int, int>();
+        foreach (var e in graph.Edges)
+        {
+            if (!e.Dispatch) continue;
+            dispatchOutDegree[e.From] = dispatchOutDegree.GetValueOrDefault(e.From) + 1;
+        }
 
         var sb = new StringBuilder();
         sb.AppendLine("digraph CallGraph {");
@@ -47,7 +59,7 @@ public static class GraphvizRenderer
 
         foreach (var edge in graph.Edges)
         {
-            var attrs = EdgeAttrs(edge, reachable);
+            var attrs = EdgeAttrs(edge, reachable, dispatchOutDegree);
             sb.AppendLine($"  n{edge.From} -> n{edge.To} [{FmtAttrs(attrs)}];");
         }
 
@@ -215,110 +227,152 @@ public static class GraphvizRenderer
     private const string LeadsToDatabaseColor = "#1565c0"; // matches database_query stroke
     private const string LeadsToMixedColor = "#6a1b9a";    // purple — both DB and external reachable
 
-    private static Dictionary<string, string> EdgeAttrs(GraphEdge edge, Dictionary<int, HashSet<string>> reachable)
+    private static Dictionary<string, string> EdgeAttrs(
+        GraphEdge edge,
+        Dictionary<int, HashSet<string>> reachable,
+        Dictionary<int, int> dispatchOutDegree)
     {
         if (edge.Dispatch)
         {
-            return new()
+            // Solid line when there's exactly one impl (no dispatch ambiguity)
+            // — same visual weight as a regular call. Dashed when there are
+            // multiple impls so the polymorphic split reads at a glance.
+            var implCount = dispatchOutDegree.GetValueOrDefault(edge.From);
+            var attrs = new Dictionary<string, string>
             {
                 ["tooltip"] = "interface dispatch",
                 ["color"] = "#9aa0a6",
-                ["style"] = "dashed",
                 ["arrowhead"] = "open",
             };
+            if (implCount > 1) attrs["style"] = "dashed";
+            return attrs;
         }
 
         var callLine = edge.CallSite.Line;
         var baseTooltip = $"call @ line {callLine}";
 
-        // Loop styling has priority — orange/purple loop coloring stays even if
-        // the path also leads to IO. The loop is the more important visual.
+        // The conditional annotation is independent of every other styling
+        // decision — a call inside `foreach { if (x) Foo(); }` should show BOTH
+        // the loop highlight (color) and the if predicate (text). We compute
+        // the conditional label/tooltip fragments once and append them to
+        // whichever branch wins the color/style fight.
+        string? condLabel = null;
+        string? condTooltip = null;
+        var cond = edge.Conditional;
+        if (cond != null)
+        {
+            // Format examples (line 57):
+            //   "@57 if (x != null)"
+            //   "@57 else of: x != null"
+            //   "@57 ?: x.IsValid"
+            var prefix = cond.Kind switch
+            {
+                ConditionalKind.If => "if",
+                ConditionalKind.Else => "else of:",
+                ConditionalKind.Ternary => "?:",
+                _ => "if",
+            };
+            // Else branches don't have a unique condition expression — we show
+            // the parent if's condition for context, prefixed with "else of:".
+            condLabel = string.IsNullOrEmpty(cond.Condition)
+                ? $"@{cond.Line} {prefix}"
+                : $"@{cond.Line} {prefix} {cond.Condition}";
+            condTooltip = string.IsNullOrEmpty(cond.Condition)
+                ? $"inside {prefix} at line {cond.Line}"
+                : $"inside {prefix} {cond.Condition} at line {cond.Line}";
+        }
+
+        // Loop styling wins on color, but conditional text still appears on the
+        // label as a second line. We also keep the existing leads-to-IO tinting
+        // for non-loop edges.
         var loop = edge.Loop;
         if (loop != null)
         {
             var loopLine = loop.Line;
             var subkind = loop.Subkind;
 
+            string baseLoopLabel;
+            string baseLoopTooltip;
+            string color, fontColor;
+            string? style = null;
+
             if (loop.Kind == LoopKind.StatementLoop)
             {
-                return new()
-                {
-                    ["label"] = $"{subkind} @{loopLine}",
-                    ["tooltip"] = $"{baseTooltip}; inside {subkind} at line {loopLine}",
-                    ["color"] = "#ef6c00",
-                    ["fontcolor"] = "#ef6c00",
-                    ["penwidth"] = "2",
-                };
+                baseLoopLabel = $"{subkind} @{loopLine}";
+                baseLoopTooltip = $"{baseTooltip}; inside {subkind} at line {loopLine}";
+                color = "#ef6c00";
+                fontColor = "#ef6c00";
+            }
+            else if (loop.Kind == LoopKind.EnumerableLoop)
+            {
+                baseLoopLabel = $".{subkind}() @{loopLine}";
+                baseLoopTooltip = $"{baseTooltip}; inside .{subkind}() at line {loopLine}";
+                color = "#6a1b9a";
+                fontColor = "#6a1b9a";
+                style = "dashed";
+            }
+            else
+            {
+                baseLoopLabel = $"loop @{loopLine}";
+                baseLoopTooltip = baseTooltip;
+                color = "#ef6c00";
+                fontColor = "#ef6c00";
             }
 
-            if (loop.Kind == LoopKind.EnumerableLoop)
+            var combinedLabel = condLabel == null ? baseLoopLabel : $"{baseLoopLabel}\n{condLabel}";
+            var combinedTooltip = condTooltip == null ? baseLoopTooltip : $"{baseLoopTooltip}; {condTooltip}";
+            var attrs = new Dictionary<string, string>
             {
-                return new()
-                {
-                    ["label"] = $".{subkind}() @{loopLine}",
-                    ["tooltip"] = $"{baseTooltip}; inside .{subkind}() at line {loopLine}",
-                    ["color"] = "#6a1b9a",
-                    ["fontcolor"] = "#6a1b9a",
-                    ["penwidth"] = "2",
-                    ["style"] = "dashed",
-                };
-            }
-
-            return new()
-            {
-                ["label"] = $"loop @{loopLine}",
-                ["tooltip"] = baseTooltip,
-                ["color"] = "#ef6c00",
+                ["label"] = combinedLabel,
+                ["tooltip"] = combinedTooltip,
+                ["color"] = color,
+                ["fontcolor"] = fontColor,
                 ["penwidth"] = "2",
             };
+            if (style != null) attrs["style"] = style;
+            return attrs;
         }
 
         // Non-loop, non-dispatch edge: tint by what's reachable downstream.
         // Look at the *target* node's reachable set — "if I traverse this edge,
         // do I end up at an IO boundary?"
+        var nonLoopColor = "#444444";
+        var nonLoopTooltip = baseTooltip;
         if (reachable.TryGetValue(edge.To, out var cats) && cats.Count > 0)
         {
             var hasExternal = cats.Contains(IoPrimitives.ExternalSystemGateway);
             var hasDb = cats.Contains(IoPrimitives.DatabaseQuery);
-            string color;
-            string suffix;
             if (hasExternal && hasDb)
             {
-                color = LeadsToMixedColor;
-                suffix = "leads to external + database";
+                nonLoopColor = LeadsToMixedColor;
+                nonLoopTooltip = $"{baseTooltip}; leads to external + database";
             }
             else if (hasExternal)
             {
-                color = LeadsToExternalColor;
-                suffix = "leads to external";
+                nonLoopColor = LeadsToExternalColor;
+                nonLoopTooltip = $"{baseTooltip}; leads to external";
             }
             else if (hasDb)
             {
-                color = LeadsToDatabaseColor;
-                suffix = "leads to database";
+                nonLoopColor = LeadsToDatabaseColor;
+                nonLoopTooltip = $"{baseTooltip}; leads to database";
             }
-            else
-            {
-                // Some other boundary category we don't have a special color for —
-                // fall through to neutral grey rather than guessing.
-                return new()
-                {
-                    ["tooltip"] = baseTooltip,
-                    ["color"] = "#444444",
-                };
-            }
-            return new()
-            {
-                ["tooltip"] = $"{baseTooltip}; {suffix}",
-                ["color"] = color,
-            };
         }
 
-        return new()
+        var nonLoopAttrs = new Dictionary<string, string>
         {
-            ["tooltip"] = baseTooltip,
-            ["color"] = "#444444",
+            ["tooltip"] = condTooltip == null ? nonLoopTooltip : $"{nonLoopTooltip}; {condTooltip}",
+            ["color"] = nonLoopColor,
         };
+        if (condLabel != null)
+        {
+            nonLoopAttrs["label"] = condLabel;
+            // Match the conditional text color to the leads-to-IO tint so the
+            // label reads as part of the same visual element. Default grey if
+            // no IO downstream — same as the line.
+            nonLoopAttrs["fontcolor"] = nonLoopColor;
+        }
+        return nonLoopAttrs;
     }
 
     private static string FmtAttrs(Dictionary<string, string> attrs)
