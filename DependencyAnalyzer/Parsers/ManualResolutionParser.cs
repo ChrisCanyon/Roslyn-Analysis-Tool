@@ -81,8 +81,8 @@ namespace DependencyAnalyzer.Parsers
 
             var resolveTargets = new[]
             {
-                ("Dispose", "System.IDisposable"),
-                ("DisposeAsync", "System.IAsyncDisposable"),
+   //             ("Dispose", "System.IDisposable"),
+   //             ("DisposeAsync", "System.IAsyncDisposable"),
                 ("Release", "Castle.Windsor.IWindsorContainer"),
             };
             var comparer = new FullyQualifiedNameComparer();
@@ -376,7 +376,10 @@ namespace DependencyAnalyzer.Parsers
                 {
                     var arg = invocation.ArgumentList.Arguments.First();
                     var typeInfo = model.GetTypeInfo(arg.Expression);
-                    if(typeInfo.Type is INamedTypeSymbol disposedClass)
+
+                    // Extract the actual type being released (handles arrays and collections)
+                    var disposedClass = ExtractElementTypeFromCollectionOrSingle(typeInfo.Type);
+                    if (disposedClass != null)
                     {
                         return disposedClass;
                     }
@@ -389,6 +392,41 @@ namespace DependencyAnalyzer.Parsers
                 {
                     return disposedClass;
                 }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Extracts the element type from arrays or collections, or returns the type itself if it's not a collection.
+        /// This handles cases where Release() is called with an array of objects (e.g., from ResolveAll).
+        /// </summary>
+        private static INamedTypeSymbol? ExtractElementTypeFromCollectionOrSingle(ITypeSymbol? type)
+        {
+            if (type == null) return null;
+
+            // Handle array types - extract the element type
+            if (type is IArrayTypeSymbol arrayType)
+            {
+                Console.WriteLine($"[ManualResolutionParser] Detected array type: {arrayType.ToDisplayString()}, extracting element type");
+                return arrayType.ElementType as INamedTypeSymbol;
+            }
+
+            // Handle collection types (IEnumerable<T>, List<T>, etc.)
+            if (type is INamedTypeSymbol namedType)
+            {
+                // Check if it implements IEnumerable<T> and extract T
+                var enumerableInterface = namedType.AllInterfaces
+                    .FirstOrDefault(i => i.OriginalDefinition?.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>");
+
+                if (enumerableInterface != null && enumerableInterface.TypeArguments.Length > 0)
+                {
+                    Console.WriteLine($"[ManualResolutionParser] Detected IEnumerable<T> type: {namedType.ToDisplayString()}, extracting element type");
+                    return enumerableInterface.TypeArguments[0] as INamedTypeSymbol;
+                }
+
+                // Not a collection, return the type as-is (single object disposal)
+                return namedType;
             }
 
             return null;
@@ -407,9 +445,9 @@ namespace DependencyAnalyzer.Parsers
                     ("GetServices", "System.IServiceProvider"),
 
                     // System.IServiceProvider (extensions)
-                    ("GetRequiredService", "Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions"),
-                    ("GetService", "Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions"),
-                    ("GetServices", "Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions"),
+       //             ("GetRequiredService", "Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions"),
+       //             ("GetService", "Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions"),
+       //             ("GetServices", "Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions"),
 
                     // System.Web.Mvc.IDependencyResolver (interface)
                     ("GetService", "System.Web.Mvc.IDependencyResolver"),

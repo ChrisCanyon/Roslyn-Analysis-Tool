@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy this file to boundary-seeds.local.json (gitignored) and add your codebase's external-boundary methods. Each entry is a (type, method) pair that the call-graph walker will tag as 'external_system_gateway' (red box). Useful for exact-matching specific interface methods you want surfaced as boundaries even when their suffix wouldn't otherwise qualify. Patterns like '*Repository' for the database_query category are kept in code (BoundarySeeds.cs); only exact members live here so internal type names don't get committed.",
+  "external_system_gateway": [
+    { "type": "MyCompany.Payments.IPaymentGateway", "method": "Charge" },
+    { "type": "MyCompany.Payments.IPaymentGateway", "method": "Refund" }
+  ]
+}

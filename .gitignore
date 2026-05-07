@@ -12,6 +12,9 @@ output/*
 ## VS Code settings
 .vscode/
 
+## Claude Code agent state
+.claude/
+
 ## Visual Studio settings
 *.csproj.user
 *.sln.docstates
@@ -33,6 +36,43 @@ global.json.sdg.json
 GeneratedCode/
 *.g.cs
 *.g.i.cs
+
+## GatewayCallGraph smoke / scratch artifacts
+GatewayCallGraph/smoke-*.json
+GatewayCallGraph/smoke-*.dot
+GatewayCallGraph/smoke-*.svg
+GatewayCallGraph/smoke-*.png
+GatewayCallGraph/smoke-*.log
+GatewayCallGraph/gateway-*.json
+GatewayCallGraph/gateway-*.svg
+GatewayCallGraph/gateway-*.dot
+GatewayCallGraph/gateway-*.png
+GatewayCallGraph/cg-*.json
+GatewayCallGraph/cg-*.svg
+GatewayCallGraph/cg-*.dot
+GatewayCallGraph/cg-*.png
+GatewayCallGraph/cg-*.html
+GatewayCallGraph/cg[0-9]*-*.json
+GatewayCallGraph/cg[0-9]*-*.svg
+GatewayCallGraph/cg[0-9]*-*.dot
+GatewayCallGraph/cg[0-9]*-*.png
+GatewayCallGraph/cg[0-9]*-*.html
+
+## Vendored client libs (Bootstrap, jQuery, etc.) -- pulled by package managers, not source-controlled
+**/wwwroot/lib/
+
+## Audit scratch artifacts (per-method graph dumps) and the findings report
+## itself — keep them local since the report names internal classes from the
+## codebase being analyzed.
+audit/
+
+## Local config — solution paths, hand-curated boundary seeds keyed on internal
+## type names, etc. The .example.json files ship with the repo as schema docs.
+**/appsettings.local.json
+**/boundary-seeds.local.json
+
+## Accidental Windows "nul" redirect artifact
+nul
 
 ## Temporary files
 *.tmp

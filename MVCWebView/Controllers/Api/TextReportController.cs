@@ -9,10 +9,10 @@ namespace MVCWebView.Controllers.Api
     public class TextReportController : ControllerBase
     {
         readonly DependencyGraph _graph;
-        readonly ErrorReportRunner _runner;
+        readonly ErrorReportGenerator _runner;
         public TextReportController(
             DependencyGraph graph,
-            ErrorReportRunner runner
+            ErrorReportGenerator runner
             )
         {
             _graph = graph;

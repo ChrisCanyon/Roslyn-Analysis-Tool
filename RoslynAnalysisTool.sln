@@ -9,6 +9,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MVCWebView", "MVCWebView\MV
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RandomCodeAnalysis", "RandomCodeAnalysis\RandomCodeAnalysis.csproj", "{8F095351-1E5A-448F-8E56-48B1C5EE56A2}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GatewayCallGraph", "GatewayCallGraph\GatewayCallGraph.csproj", "{B2C08625-1A67-4771-A8AC-54DD2D1DEB04}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RoslynGraphUi.Shared", "RoslynGraphUi.Shared\RoslynGraphUi.Shared.csproj", "{B64F1FBD-1456-418A-9405-618B8EEFF3B8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +31,14 @@ Global
 		{8F095351-1E5A-448F-8E56-48B1C5EE56A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8F095351-1E5A-448F-8E56-48B1C5EE56A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8F095351-1E5A-448F-8E56-48B1C5EE56A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2C08625-1A67-4771-A8AC-54DD2D1DEB04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2C08625-1A67-4771-A8AC-54DD2D1DEB04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2C08625-1A67-4771-A8AC-54DD2D1DEB04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2C08625-1A67-4771-A8AC-54DD2D1DEB04}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B64F1FBD-1456-418A-9405-618B8EEFF3B8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B64F1FBD-1456-418A-9405-618B8EEFF3B8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B64F1FBD-1456-418A-9405-618B8EEFF3B8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B64F1FBD-1456-418A-9405-618B8EEFF3B8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

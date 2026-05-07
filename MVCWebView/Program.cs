@@ -1,6 +1,7 @@
 using DependencyAnalyzer;
 using DependencyAnalyzer.Models;
 using DependencyAnalyzer.Parsers;
+using GatewayCallGraph;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis.MSBuild;
 using System.Diagnostics;
@@ -26,17 +27,36 @@ WriteGreenText($"~~~ Building RAT ~~~");
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Pull SolutionPath from appsettings.local.json (gitignored), the LOCAL_SOLUTION_PATH
+// env var, or appsettings.{Environment}.json — in that order. Throw a clear error
+// if none are set so the developer knows where to put their path.
+builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
+builder.Configuration.AddEnvironmentVariables();
+string solutionPath = builder.Configuration["SolutionPath"]
+    ?? Environment.GetEnvironmentVariable("LOCAL_SOLUTION_PATH")
+    ?? throw new InvalidOperationException(
+        "SolutionPath is not configured. Create MVCWebView/appsettings.local.json with " +
+        "{ \"SolutionPath\": \"C:\\\\path\\\\to\\\\Your.sln\" } or set LOCAL_SOLUTION_PATH. " +
+        "See MVCWebView/appsettings.local.example.json for the expected shape.");
+
 // Add services to the container.
 builder.Services.AddControllersWithViews()
-    .AddRazorRuntimeCompilation();
+    .AddRazorRuntimeCompilation()
+    .AddJsonOptions(opts =>
+    {
+        // Emit enum values (NodeKind, LoopKind, ...) as snake_lower strings so
+        // the front-end can compare against e.g. "gateway_method" without caring
+        // about underlying ordinals.
+        opts.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter(
+                System.Text.Json.JsonNamingPolicy.SnakeCaseLower));
+    });
 
 ThreadPool.SetMinThreads(Environment.ProcessorCount * 2, Environment.ProcessorCount * 2);
 
 MSBuildLocator.RegisterDefaults();
 WriteGreenText($"~~~ Opening Workspace ~~~");
 using var workspace = MSBuildWorkspace.Create();
-
-string solutionPath = "C:\\PathToSln.sln";
 
 //Generate full dependency graph for project and register as single to cache it
 var stopwatch = Stopwatch.StartNew();
@@ -102,8 +122,13 @@ builder.Services.AddSingleton(solutionAnalyzer);
 builder.Services.AddSingleton(dependencyAnalyzer);
 builder.Services.AddSingleton(graph);
 builder.Services.AddSingleton(s);
-builder.Services.AddScoped<ErrorReportRunner>();
+builder.Services.AddScoped<ErrorReportGenerator>();
 builder.Services.AddSingleton(manParse);
+
+// Gateway-call-graph services (separate UI surface; share the loaded Solution).
+builder.Services.AddSingleton(new ControllerGraphBuilder(s));
+builder.Services.AddSingleton(new ControllerEnumerator(s));
+builder.Services.AddMemoryCache();
 
 var app = builder.Build();
 

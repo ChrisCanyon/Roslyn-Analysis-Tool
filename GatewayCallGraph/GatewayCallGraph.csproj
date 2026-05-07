@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>GatewayCallGraph</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build" Version="17.9.5">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Build.Locator" Version="1.9.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis" Version="4.14.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.14.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RandomCodeAnalysis\RandomCodeAnalysis.csproj" />
+  </ItemGroup>
+
+  <!-- Copy the local seed file (gitignored) and example next to the binary so
+       BoundarySeeds.LoadLocalMembers can find them. The local file is optional
+       so we use Condition to avoid build errors when it's missing. -->
+  <ItemGroup>
+    <None Include="boundary-seeds.local.example.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="boundary-seeds.local.json" Condition="Exists('boundary-seeds.local.json')" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

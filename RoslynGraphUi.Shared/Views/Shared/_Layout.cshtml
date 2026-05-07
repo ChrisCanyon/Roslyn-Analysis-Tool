@@ -1,0 +1,25 @@
+@{
+    var appName = ViewData["AppName"] as string ?? "Roslyn Graph UI";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - @appName</title>
+    <link rel="stylesheet" href="~/_content/RoslynGraphUi.Shared/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/_content/RoslynGraphUi.Shared/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/_content/RoslynGraphUi.Shared/css/layout.css" asp-append-version="true" />
+</head>
+<body>
+    <div>
+        <main role="main">
+            @RenderBody()
+        </main>
+    </div>
+    <script src="~/_content/RoslynGraphUi.Shared/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/_content/RoslynGraphUi.Shared/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/_content/RoslynGraphUi.Shared/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

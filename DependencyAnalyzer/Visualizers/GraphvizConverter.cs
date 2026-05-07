@@ -153,16 +153,16 @@ namespace DependencyAnalyzer.Visualizers
 
             CreateNode(sb, currentNode);
 
-            foreach (var dependant in currentNode.DependedOnBy)
+            foreach (var consumer in currentNode.DependedOnBy)
             {
-                TraverseConsumerGraph(dependant, path, visitedNodes, sb);
+                TraverseConsumerGraph(consumer, path, visitedNodes, sb);
             }
 
-            foreach (var dependant in currentNode.DependedOnBy)
+            foreach (var consumer in currentNode.DependedOnBy)
             {
-                string label = GenerateEdgeLabelForRelationship(currentNode, dependant);
+                string label = GenerateEdgeLabelForRelationship(currentNode, consumer);
 
-                CreateEdge(sb, dependant, currentNode, label);
+                CreateEdge(sb, consumer, currentNode, label);
             }
 
             path.Pop();

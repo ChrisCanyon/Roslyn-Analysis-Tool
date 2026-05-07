@@ -1,0 +1,77 @@
+@using static MVCWebView.Controllers.HomeController
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Gateway Call Graph";
+    ViewData["AppName"] = "MVCWebView";
+    var actions = (List<ClassSelectItem>)ViewData["ControllerActions"]!;
+    // Ship to JS as a JSON array of { display, value } so Awesomplete can do
+    // its own substring matching against the namespace-bearing display string.
+    // System.Text.Json defaults are HTML-safe.
+    var actionsJson = JsonSerializer.Serialize(actions.Select(a => new { display = a.Display, value = a.Value }));
+}
+
+@await Html.PartialAsync("_GraphPageHead")
+<style>
+    /* Side-panel headers — accent so they pop against the black background. */
+    .gp-header { color: #4fc3f7; letter-spacing: 0.02em; border-bottom: 1px solid #2a3442; padding-bottom: 4px; }
+    /* Call-count severity scale. degree 0 stays neutral; N is yellow; each
+       additional power gets hotter. The pre containers are already monospace. */
+    .cc-row    { display: block; }
+    .cc-name   { color: #cfd8dc; }
+    .cc-formula { font-weight: bold; }
+    .cc-d0     { color: #90a4ae; }            /* constant — no signal */
+    .cc-d1     { color: #ffd54f; }            /* N — yellow */
+    .cc-d2     { color: #ff9800; }            /* N^2 — orange */
+    .cc-d3     { color: #ef5350; }            /* N^3 — red */
+    .cc-d4     { color: #ff1744; text-shadow: 0 0 4px #ff1744aa; } /* N^4+ — really bad */
+    .cat-ext   { color: #ef9a9a; }
+    .cat-dat   { color: #90caf9; }
+</style>
+<script>
+    window.controllerActions = @Html.Raw(actionsJson);
+</script>
+<script src="~/js/Views/Home/callgraph.js" asp-append-version="true"></script>
+
+@await Html.PartialAsync("_LoadingOverlay")
+
+<div class="bg-light p-2 border-bottom" style="position: relative; height: 55px;">
+    <div style="position: absolute; left: 0; padding-left: 1em;">
+        <button class="btn btn-outline-secondary" onclick="loadPrevious()">&lt; Back</button>
+    </div>
+    <div class="d-flex align-items-center gap-2" style="position: absolute; left: 50%; transform: translateX(-50%);">
+        <input id="controllerInput" class="form-control" style="width: 720px"
+               placeholder="Type any part of the namespace, controller, or method..." autocomplete="off" />
+        <button class="btn btn-outline-primary" style="width: max-content;" onclick="loadController()">Load Graph</button>
+    </div>
+    <div class="d-flex align-items-center gap-2" style="position: absolute; right: 0; padding-right: 1em;">
+        <a class="btn btn-outline-secondary" href="/">Dependency UI</a>
+    </div>
+</div>
+
+<div class="container-fluid overflow-hidden">
+    <div class="d-flex flex-row" style="height: calc(100vh - 70px);">
+        <div id="graphPanel" class="flex-grow-1 overflow-auto p-3 bg-white">
+            <div id="svgContainer" style="height: 100%; overflow: auto;">
+                <div id="svgOutput" style="height: 100%">
+                    Pick a controller action above to render its call graph down to the gateways it reaches.
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-black text-light p-3" style="overflow: auto; max-height: 100%; max-width: 28vw;">
+            <div class="pre-wrap-container mono p-2 bg-black text-light">
+                <h5 class="gp-header">Current root</h5>
+                <pre id="currentRoot">(none)</pre>
+
+                <h5 class="gp-header mt-3">Stats</h5>
+                <pre id="graphStats">(empty)</pre>
+
+                <h5 class="gp-header mt-3">Boundary call counts</h5>
+                <pre id="boundaryCallCounts">(none)</pre>
+
+                <h5 class="gp-header mt-3">Loop edges</h5>
+                <pre id="loopList">(none)</pre>
+            </div>
+        </div>
+    </div>
+</div>

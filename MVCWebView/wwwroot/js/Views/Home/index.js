@@ -1,50 +1,11 @@
-﻿async function loadSingleNode() {
-    allControllers = false;
-    entireProject = false;
-    const className = document.getElementById("classInput").value;
-    if (!className) return window.alert("No class selected");
-
-    loadTextReports();
-    loadSingleClassSvg();
-} 
-
-async function loadPrevious() {
-    if (historyStack.length < 2) {
-        console.warn("No previous view.");
-        return;
-    }
-
-    const currentView = historyStack.pop();
-    const lastView = historyStack.pop();
-
-    if (!lastView.project) {
-        console.warn("Missing class name for SINGLE_CLASS view.");
-        return;
-    }
-    document.getElementById("projectInput").value = lastView.project;
-
-    switch (lastView.type) {
-        case ViewType.CONTROLLER:
-            await loadAllControllers();
-            break;
-
-        case ViewType.ENTIRE_PROJECT:
-            await loadEntireProject();
-            break;
-
-        case ViewType.SINGLE_CLASS:
-            if (!lastView.className) {
-                console.warn("Missing class name for SINGLE_CLASS view.");
-                return;
-            }
-            document.getElementById("classInput").value = lastView.className;
-            await loadSingleNode(lastView.project, lastView.className);
-            break;
-
-        default:
-            console.warn("Unknown view type:", lastView.type);
-    }
-}
+/*
+ * MVCWebView Index page glue. Generic SVG mechanics live in RoslynGraphUi
+ * (loaded from RoslynGraphUi.Shared via _GraphPageHead.cshtml). This file
+ * carries only the bits that are specific to the dependency-analysis UI:
+ *   - three view modes (single class, all controllers, entire project)
+ *   - the classInput format "ClassName : InterfaceName"
+ *   - the text-report panels on the right rail
+ */
 
 const ViewType = {
     CONTROLLER: "Controller",
@@ -52,54 +13,118 @@ const ViewType = {
     SINGLE_CLASS: "SingleClass"
 };
 
-const historyStack = [];
+let entireProject = false;
+let allControllers = false;
 
-function createViewContext(type, project, className = null) {
-    return {
-        type,               // one of ViewType
-        project,            // string
-        className           // string or null (only for SINGLE_CLASS)
-    };
+document.addEventListener("DOMContentLoaded", () => {
+    RoslynGraphUi.init({
+        svgContainerId: "svgOutput",
+        loadingOverlayId: "loadingOverlay",
+        onNodeClick: (className) => {
+            const input = document.getElementById("classInput");
+            input.value = className;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            loadSingleNode();
+        },
+        onBack: (previousView) => {
+            if (!previousView) return;
+            if (previousView.project) {
+                document.getElementById("projectInput").value = previousView.project;
+            }
+            switch (previousView.type) {
+                case ViewType.CONTROLLER:
+                    loadAllControllers();
+                    break;
+                case ViewType.ENTIRE_PROJECT:
+                    loadEntireProject();
+                    break;
+                case ViewType.SINGLE_CLASS:
+                    if (previousView.className) {
+                        document.getElementById("classInput").value = previousView.className;
+                    }
+                    loadSingleNode();
+                    break;
+            }
+        },
+    });
+});
+
+async function loadSingleNode() {
+    allControllers = false;
+    entireProject = false;
+
+    const className = document.getElementById("classInput").value;
+    if (!className) return window.alert("No class selected");
+
+    loadTextReports();
+    await loadSingleClassSvg();
 }
 
-var entireProject = false;
 async function loadEntireProject() {
     allControllers = false;
     entireProject = true;
-    showLoading();
-    loadTextReports(true, false);
-    const project = document.getElementById('projectInput').value;
+    RoslynGraphUi.showLoading();
+    loadTextReports();
+    const project = document.getElementById("projectInput").value;
 
     const response = await fetch(`/api/SVG/GetEntireProjectSVG?project=${encodeURIComponent(project)}`);
     if (response.ok) {
         const svg = await response.text();
-        document.getElementById('svgOutput').innerHTML = svg;
-        historyStack.push(createViewContext(ViewType.ENTIRE_PROJECT, project))
+        RoslynGraphUi.renderSvg(svg, {
+            contextToPush: { type: ViewType.ENTIRE_PROJECT, project },
+        });
     } else {
-        document.getElementById('svgOutput').innerText = 'Failed to load SVG.';
+        document.getElementById("svgOutput").innerText = "Failed to load SVG.";
     }
-    hideLoading();
-    configureSVG();
+    RoslynGraphUi.hideLoading();
 }
 
-var allControllers = false;
 async function loadAllControllers() {
     allControllers = true;
     entireProject = false;
-    showLoading();
-    loadTextReports(false, true);
-    const project = document.getElementById('projectInput').value;
+    RoslynGraphUi.showLoading();
+    loadTextReports();
+    const project = document.getElementById("projectInput").value;
 
     const response = await fetch(`/api/SVG/GetAllControllersSVG?project=${encodeURIComponent(project)}`);
     if (response.ok) {
         const svg = await response.text();
-        document.getElementById('svgOutput').innerHTML = svg;
-        historyStack.push(createViewContext(ViewType.CONTROLLER, project))
+        RoslynGraphUi.renderSvg(svg, {
+            contextToPush: { type: ViewType.CONTROLLER, project },
+        });
     } else {
-        document.getElementById('svgOutput').innerText = 'Failed to load SVG.';
+        document.getElementById("svgOutput").innerText = "Failed to load SVG.";
     }
-    hideLoading();
-    configureSVG();
+    RoslynGraphUi.hideLoading();
+}
+
+async function loadSingleClassSvg() {
+    RoslynGraphUi.showLoading();
+    const rawClassName = document.getElementById("classInput").value;
+    const parts = rawClassName.split(":").map(s => s.trim());
+    const className = parts[0] || "";
+    const interfaceName = parts[1] || "";
+    const project = document.getElementById("projectInput").value;
+
+    const response = await fetch(
+        `/api/SVG/GetSvg?implementationName=${encodeURIComponent(className)}` +
+        `&interfaceName=${encodeURIComponent(interfaceName)}` +
+        `&project=${encodeURIComponent(project)}`
+    );
+    if (response.ok) {
+        const svg = await response.text();
+        RoslynGraphUi.renderSvg(svg, {
+            contextToPush: { type: ViewType.SINGLE_CLASS, project, className },
+            centerOnNodeId: className,
+        });
+    } else {
+        document.getElementById("svgOutput").innerText = "Failed to load SVG.";
+    }
+    RoslynGraphUi.hideLoading();
+}
+
+function loadPrevious() {
+    RoslynGraphUi.back();
 }
 
 async function loadTextReports() {
@@ -112,17 +137,23 @@ async function loadTextReports() {
     fetchTextReport("ManualInstantiation", "output-manual-instantiation");
     fetchTextReport("CaptiveDependencies", "output-captive-dependencies");
     fetchTextReport("TransientManualResolutions", "output-transient-manual-resolutions");
-};
+}
 
-async function fetchTextReport(endpoint, outputId){
-    const rawClassName = document.getElementById('classInput').value;
+async function fetchTextReport(endpoint, outputId) {
+    const rawClassName = document.getElementById("classInput").value;
     const parts = rawClassName.split(":").map(s => s.trim());
     const className = parts[0] || "";
-    const interface = parts[1] || "";
+    const interfaceName = parts[1] || "";
     const project = document.getElementById("projectInput").value;
 
+    const params =
+        `type=${encodeURIComponent(endpoint)}` +
+        `&implementationName=${encodeURIComponent(className)}` +
+        `&interfaceName=${encodeURIComponent(interfaceName)}` +
+        `&project=${encodeURIComponent(project)}` +
+        `&entireProject=${encodeURIComponent(entireProject)}` +
+        `&allControllers=${encodeURIComponent(allControllers)}`;
 
-    var params = `type=${encodeURIComponent(endpoint)}&implementationName=${encodeURIComponent(className)}&interfaceName=${encodeURIComponent(interface)}&project=${encodeURIComponent(project)}&entireProject=${encodeURIComponent(entireProject)}&allControllers=${encodeURIComponent(allControllers) }`
     const response = await fetch(`/api/TextReport/GetTextReport?${params}`);
 
     if (!response.ok) {
@@ -133,127 +164,4 @@ async function fetchTextReport(endpoint, outputId){
 
     const html = await response.text();
     document.getElementById(outputId).innerHTML = html;
-}
-
-async function loadSingleClassSvg() {
-    showLoading();
-    const rawClassName = document.getElementById('classInput').value;
-    const parts = rawClassName.split(":").map(s => s.trim());
-    const className = parts[0] || "";
-    const interface = parts[1] || "";
-    const project = document.getElementById('projectInput').value;
-
-    const response = await fetch(`/api/SVG/GetSvg?implementationName=${encodeURIComponent(className)}&interfaceName=${encodeURIComponent(interface)}&project=${encodeURIComponent(project)}`);
-    if (response.ok) {
-        historyStack.push(createViewContext(ViewType.SINGLE_CLASS, project, className))
-        const svg = await response.text();
-        document.getElementById('svgOutput').innerHTML = svg;
-    } else {
-        document.getElementById('svgOutput').innerText = 'Failed to load SVG.';
-    }
-    hideLoading();
-
-    configureSVG(className);
-}
-
-function configureSVG(className) {
-    const svg = document.querySelector("#svgOutput svg");
-    if (svg) {
-        svg.removeAttribute("width");
-        svg.removeAttribute("height");
-        svg.setAttribute("width", "100%");
-        svg.setAttribute("height", "100%");
-        svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-        svg.style.maxWidth = "100%";
-        svg.style.height = "100%";
-
-        // Optional if missing:
-        if (!svg.hasAttribute("viewBox")) {
-            const bbox = svg.getBBox();
-            svg.setAttribute("viewBox", `0 0 ${bbox.width} ${bbox.height}`);
-        }
-
-        svgPanZoom(svg, {
-            zoomEnabled: true,
-            controlIconsEnabled: true,
-            fit: true,
-            center: true,
-            minZoom: 0.5,
-            maxZoom: 1000,
-            contain: true,
-        });
-
-        attachClickHandlers();
-        if(className) centerSVGOnSelectedClass(className);
-    }
-}
-
-function centerSVGOnSelectedClass(className) {
-    const node = findNodeByTitle(className);
-    if (!node) return;
-
-    const svg = document.querySelector("#svgOutput svg");
-    if (!svg || !window.panZoomInstance) return;
-
-    const bbox = node.getBBox();
-    const viewCenter = {
-        x: svg.clientWidth / 2,
-        y: svg.clientHeight / 2
-    };
-
-    const zoom = window.panZoomInstance.getZoom();
-    window.panZoomInstance.pan({
-        x: viewCenter.x - (bbox.x + bbox.width / 2) * zoom,
-        y: viewCenter.y - (bbox.y + bbox.height / 2) * zoom
-    });
-}
-
-function findNodeByTitle(className) {
-    const svg = document.querySelector("#svgOutput svg");
-    const nodes = svg.querySelectorAll("g.node");
-
-    for (const node of nodes) {
-        const title = node.querySelector("title");
-        if (title?.textContent.trim() === className) {
-            return node;
-        }
-    }
-    return null;
-}
-
-function attachClickHandlers() {
-    const svg = document.querySelector("#svgOutput svg");
-    if (!svg) return;
-
-    const nodes = svg.querySelectorAll('g.node');
-
-    nodes.forEach(node => {
-        const titleElement = node.querySelector("title");
-        if (!titleElement) return;
-
-        const className = titleElement.textContent?.trim();
-        if (!className) return;
-
-        node.style.cursor = "pointer";
-        node.addEventListener("click", () => {
-            console.log("Clicked node:", className);
-            const input = document.getElementById("classInput");
-            input.value = className
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            loadSingleNode();
-        });
-    });
-}
-
-function showLoading() {
-    const overlay = document.getElementById("loadingOverlay");
-    const img = overlay.querySelector("img");
-    overlay.style.display = "flex";
-    img.classList.remove("grow"); // reset
-    void img.offsetWidth; // force reflow to restart animation
-    img.classList.add("grow");
-}
-
-function hideLoading() {
-    document.getElementById("loadingOverlay").style.display = "none";
 }
