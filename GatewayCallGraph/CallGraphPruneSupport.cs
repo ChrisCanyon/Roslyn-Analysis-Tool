@@ -62,12 +62,25 @@ internal static class CallGraphPruneSupport
             if (e.Dispatch)
             {
                 pruned.AddDispatchEdge(nf, nt);
+                // Preserve ServesTypes through the prune so the picker still
+                // knows which concrete classes a dispatch edge serves in
+                // post-passed views (focus, collapse, hide).
+                if (e.ServesTypes != null && e.ServesTypes.Count > 0)
+                {
+                    pruned.SetDispatchServesTypes(nf, nt, e.ServesTypes);
+                }
             }
             else
             {
                 pruned.AddEdge(nf, nt, e.CallSite, e.Loop, e.Conditional);
             }
         }
+
+        // Carry the per-controller picker snapshot through unchanged. It's
+        // a property of "this controller's maximal graph," not "this view"
+        // — pruning never invalidates it, so the picker stays stable across
+        // focus / collapse / hide toggles.
+        pruned.InterfaceImpls = source.InterfaceImpls;
 
         return pruned;
     }

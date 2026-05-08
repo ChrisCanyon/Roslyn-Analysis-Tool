@@ -59,6 +59,11 @@ public sealed class ControllerGraphBuilder
     {
         var graph = new CallGraph();
         await AddIntoAsync(graph, rootMethod);
+        // Annotate dispatch edges with the concrete classes whose vtable
+        // resolves through them. Single Roslyn-heavy pass per built graph;
+        // result lives on the cached canonical graph for the lifetime of
+        // the process. The picker reads this on every render.
+        await DispatchServesTypesResolver.ResolveAsync(graph, _solution).ConfigureAwait(false);
         return graph;
     }
 

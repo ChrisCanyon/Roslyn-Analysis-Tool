@@ -190,6 +190,27 @@ public sealed class GraphEdge
     /// </summary>
     [JsonPropertyName("dispatch")]
     public bool Dispatch { get; init; }
+
+    /// <summary>
+    /// Only set on dispatch edges. The full FQNs of every concrete in-source
+    /// class whose vtable resolves through this dispatch edge for the
+    /// from-node's method.
+    ///
+    /// Crucial for the per-interface picker: when the user picks "use Munis
+    /// for IUtilityBillingGateway," methods Munis OVERRIDES route through
+    /// <c>Munis.M</c> (so its dispatch edge has <c>Munis</c> in
+    /// ServesTypes), but methods Munis INHERITS route through
+    /// <c>RestApi.M</c> (so its dispatch edge has BOTH <c>RestApi</c> AND
+    /// <c>Munis</c> in ServesTypes — Munis's runtime path goes through
+    /// the inherited base impl). The picker filter rule is then
+    /// "keep dispatch edges whose ServesTypes contains the picked concrete
+    /// type; hide the rest" — automatically correct for both override and
+    /// inheritance cases.
+    ///
+    /// Null for non-dispatch edges.
+    /// </summary>
+    [JsonPropertyName("servesTypes")]
+    public List<string>? ServesTypes { get; init; }
 }
 
 /// <summary>
@@ -208,6 +229,21 @@ public sealed record NodeStyleInfo(
     [property: JsonPropertyName("strokeColor")] string StrokeColor,
     [property: JsonPropertyName("style")] string Style,
     [property: JsonPropertyName("fontColor")] string FontColor);
+
+/// <summary>
+/// Stable per-controller snapshot of "what concrete classes can serve as
+/// implementations for each interface or virtual-base type with dispatch
+/// fan-out in this controller's maximal call graph."
+///
+/// Computed ONCE per maximal graph (in <see cref="DispatchServesTypesResolver"/>),
+/// then carried unchanged through every post-pass prune (collapse, hide,
+/// focus). The picker UI reads from this so the dropdown options stay
+/// stable across navigation: focusing a node or picking an impl doesn't
+/// change which interfaces are offered or which classes you can pick from.
+/// </summary>
+public sealed record InterfaceImplsInfo(
+    [property: JsonPropertyName("typeFqn")] string TypeFqn,
+    [property: JsonPropertyName("concretes")] List<string> Concretes);
 
 public sealed class CallGraph
 {
@@ -232,6 +268,16 @@ public sealed class CallGraph
     /// </summary>
     [JsonPropertyName("boundaryCallCounts")]
     public List<BoundaryCallCount> BoundaryCallCounts { get; set; } = new();
+
+    /// <summary>
+    /// Stable per-controller picker options. Populated once during build by
+    /// <see cref="DispatchServesTypesResolver"/>; carried unchanged through
+    /// every post-pass prune. The picker UI uses this so the available
+    /// interfaces and concrete-class options don't change when the user
+    /// focuses, hides, or collapses — same controller means same options.
+    /// </summary>
+    [JsonPropertyName("interfaceImpls")]
+    public List<InterfaceImplsInfo> InterfaceImpls { get; set; } = new();
 
     // Two parallel indexes. The symbol map is the fast path — Roslyn usually
     // hands out the same IMethodSymbol instance for the same method, so
@@ -355,5 +401,35 @@ public sealed class CallGraph
             Loop = null,
             Dispatch = true,
         });
+    }
+
+    /// <summary>
+    /// Set the <see cref="GraphEdge.ServesTypes"/> annotation on the dispatch
+    /// edge between <paramref name="from"/> and <paramref name="to"/>. Called
+    /// by the post-build resolver. Replaces any existing list.
+    /// </summary>
+    public void SetDispatchServesTypes(int from, int to, IReadOnlyCollection<string> servesTypes)
+    {
+        for (var i = 0; i < Edges.Count; i++)
+        {
+            var e = Edges[i];
+            if (e.From != from || e.To != to || !e.Dispatch) continue;
+            var ordered = servesTypes
+                .Where(s => !string.IsNullOrEmpty(s))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToList();
+            Edges[i] = new GraphEdge
+            {
+                From = e.From,
+                To = e.To,
+                CallSite = e.CallSite,
+                Loop = e.Loop,
+                Conditional = e.Conditional,
+                Dispatch = e.Dispatch,
+                ServesTypes = ordered.Count == 0 ? null : ordered,
+            };
+            return;
+        }
     }
 }

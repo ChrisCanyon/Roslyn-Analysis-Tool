@@ -16,9 +16,11 @@ let currentRootFqn = null;
 // The currently focused-on FQN, or null for "show full graph." Set by clicking
 // a node, cleared by the "clear focus" link or loading a new controller.
 let currentFocus = null;
-// FQNs of impls the user has toggled OFF. Persists across re-renders so the
-// hidden state stays sticky as the user navigates.
-const hiddenImplFqns = new Set();
+// Hide-impls is derived state — recomputed before every fetch from
+// selectedTypeByInterface + the last rendered graph's dispatch edges.
+// User intent lives in selectedTypeByInterface (sticky); this is just
+// the wire-format flat list the server expects on every request.
+let hiddenImplFqns = new Set();
 
 document.addEventListener("DOMContentLoaded", () => {
     RoslynGraphUi.init({
@@ -123,6 +125,11 @@ async function renderCurrentView(rootFqn) {
     document.getElementById("currentRoot").textContent = cleanRoot;
     updateFocusBanner();
 
+    // Derive hide-impls from the current sticky selections + the LAST
+    // rendered graph's dispatch edges. On the very first load currentGraph
+    // is null and the result is empty — correct, no filter to apply yet.
+    hiddenImplFqns = deriveHiddenImpls(currentGraph);
+
     const expandQs = isExpandEnabled() ? "&expand=true" : "";
     const hideQs = hiddenImplFqns.size > 0
         ? `&hideImpls=${encodeURIComponent([...hiddenImplFqns].join("|"))}`
@@ -154,6 +161,10 @@ async function renderCurrentView(rootFqn) {
         if (jsonResp.ok) {
             const graph = await jsonResp.json();
             currentGraph = graph; // stash so click handler can probe for impls
+            // Re-derive against the freshly fetched graph so the next
+            // render or export sees the up-to-date hide list (focus may
+            // have pruned dispatch sites that were in the previous graph).
+            hiddenImplFqns = deriveHiddenImpls(currentGraph);
             updateStats(graph);
         }
 
@@ -425,68 +436,55 @@ function stripBoundarySuffix(fqn) {
     return i === -1 ? fqn : fqn.substring(0, i);
 }
 
-/* ---------- Interface impls picker (side panel) ---------- */
+/* ---------- Per-interface impl picker (side panel) ---------- */
 
 /**
- * Per-interface remembered impl FQNs. Hidden impls don't appear in the current
- * graph's edges (server-side filter), so without this we'd lose the ability to
- * un-hide them after the first apply. Accumulates across loads.
- */
-const knownImplsByInterface = new Map();
-
-/**
- * Pending toggle changes the user has made but hasn't applied yet. Each entry
- * is `implFqn -> intendedHiddenState`. Cleared on Apply or Reset. The pending
- * state is what gets shown with yellow/green color in the panel; only on
- * Apply does it merge into hiddenImplFqns and trigger a rebuild.
- */
-const pendingImplChanges = new Map();
-
-/**
- * Update the side-panel "Interface impls" section based on the current graph.
- * Walks every node with outgoing dispatch edges, accumulates impls into the
- * per-interface memory, then renders one collapsible row per interface that
- * has 2+ known impls (or 1+ where any impl is currently/pending hidden).
+ * User's selection per interface (or virtual base class) — the dispatch
+ * source's TYPE FQN maps to a concrete impl class FQN. Sticky across
+ * navigation: a selection persists even when the interface isn't visible
+ * in the current view, and reapplies automatically when it reappears.
  *
- * Single-impl interfaces with everything visible are skipped — they offer
- * nothing to toggle and would just be noise.
+ * <c>null</c> entry / missing key both mean "(All impls)" — no filtering
+ * for that interface. Selections are committed only on Apply.
+ */
+const selectedTypeByInterface = new Map();
+
+/**
+ * Pending picks the user has made but hasn't applied yet. Same shape as
+ * <c>selectedTypeByInterface</c>; cleared on Apply or Reset. The dropdown
+ * shows the pending value but the rendered graph only reflects the
+ * committed selections until Apply.
+ */
+const pendingSelections = new Map();
+
+const ALL_IMPLS_VALUE = "__all__";
+
+/**
+ * Rebuild the picker rows from the current rendered graph. Source of truth:
+ *
+ *   1. Walk every dispatch edge in <paramref name="graph"/>.
+ *   2. Group by the from-node's TYPE FQN (interface or virtual base class).
+ *   3. For each group, collect every concrete type that appears in any
+ *      ServesTypes list across the group's edges. Dedupe.
+ *   4. Show a row per group with ≥2 distinct concrete types.
+ *
+ * The user picks one concrete type per row. On Apply, the JS computes the
+ * flat hide list from the current graph's dispatch edges + the picks and
+ * sends it as <c>hideImpls</c>; the server's CallGraphHideImpls post-pass
+ * does the actual filtering against the cached canonical graph.
+ *
+ * Selections are sticky in <c>selectedTypeByInterface</c>. If the user
+ * picked Munis for IUtilityBillingGateway and then navigates somewhere
+ * IUtilityBillingGateway isn't dispatched, the row vanishes but the pick
+ * survives. Navigate back, the row reappears with the pick still applied.
  */
 function rebuildInterfaceImplList(graph) {
     const container = document.getElementById("interfaceImplList");
     if (!container) return;
 
-    // Index: interfaceFqn -> Set<implFqn>, accumulated from the current graph.
-    if (graph) {
-        const nodesById = new Map(graph.nodes.map(n => [n.id, n]));
-        const dispatchByFrom = new Map();
-        for (const e of graph.edges) {
-            if (!e.dispatch) continue;
-            if (!dispatchByFrom.has(e.from)) dispatchByFrom.set(e.from, []);
-            dispatchByFrom.get(e.from).push(e.to);
-        }
-        for (const [fromId, toIds] of dispatchByFrom) {
-            const ifaceFqn = nodesById.get(fromId)?.fqn;
-            if (!ifaceFqn) continue;
-            if (!knownImplsByInterface.has(ifaceFqn)) knownImplsByInterface.set(ifaceFqn, new Set());
-            const set = knownImplsByInterface.get(ifaceFqn);
-            for (const tid of toIds) {
-                const impl = nodesById.get(tid);
-                if (impl) set.add(impl.fqn);
-            }
-        }
-    }
+    const rows = computePickerRows(graph);
 
-    // Render. Sort by interface short name for predictable scanning.
-    const interfaces = [...knownImplsByInterface.entries()]
-        .filter(([, impls]) => {
-            // Skip single-impl interfaces with no hidden/pending toggles —
-            // nothing to choose between.
-            if (impls.size >= 2) return true;
-            return [...impls].some(f => hiddenImplFqns.has(f) || pendingImplChanges.has(f));
-        })
-        .sort((a, b) => shortNameOfFqn(a[0]).localeCompare(shortNameOfFqn(b[0])));
-
-    if (interfaces.length === 0) {
+    if (rows.length === 0) {
         container.className = "ii-empty";
         container.textContent = "(no interfaces with multiple impls in this graph)";
         updateApplyBadge();
@@ -496,82 +494,111 @@ function rebuildInterfaceImplList(graph) {
     container.className = "";
     container.innerHTML = "";
 
-    for (const [ifaceFqn, implsSet] of interfaces) {
-        const impls = [...implsSet].sort((a, b) => a.localeCompare(b));
+    for (const row of rows) {
         const wrap = document.createElement("div");
         wrap.className = "ii-iface";
-        // Remember expand state across re-renders. We use a data attribute on
-        // a hidden marker keyed by FQN; if present, expand by default.
-        if (expandedInterfaces.has(ifaceFqn)) wrap.classList.add("expanded");
 
         const header = document.createElement("div");
-        header.className = "ii-iface-header";
-        header.title = ifaceFqn;
-        const caret = document.createElement("span");
-        caret.className = "ii-caret";
-        header.appendChild(caret);
-        header.appendChild(document.createTextNode(" " + shortNameOfFqn(ifaceFqn) + ` (${impls.length})`));
-        header.addEventListener("click", () => {
-            wrap.classList.toggle("expanded");
-            if (wrap.classList.contains("expanded")) expandedInterfaces.add(ifaceFqn);
-            else expandedInterfaces.delete(ifaceFqn);
-        });
+        header.className = "ii-iface-header-static";
+        header.title = row.typeFqn;
+        header.textContent = shortNameOfFqn(row.typeFqn);
         wrap.appendChild(header);
 
-        const list = document.createElement("div");
-        list.className = "ii-impl-list";
-        for (const implFqn of impls) {
-            const baseHidden = hiddenImplFqns.has(implFqn);
-            const pending = pendingImplChanges.has(implFqn) ? pendingImplChanges.get(implFqn) : null;
-            const effectiveHidden = pending !== null ? pending : baseHidden;
+        const sel = document.createElement("select");
+        sel.className = "ii-select";
 
-            const lbl = document.createElement("label");
-            lbl.className = "ii-impl";
-            if (pending !== null) {
-                lbl.classList.add(pending ? "ii-impl-pending" : "ii-impl-pending-show");
-            }
+        const allOpt = document.createElement("option");
+        allOpt.value = ALL_IMPLS_VALUE;
+        allOpt.textContent = `(All impls — ${row.concretes.length})`;
+        sel.appendChild(allOpt);
 
-            const cb = document.createElement("input");
-            cb.type = "checkbox";
-            cb.checked = !effectiveHidden;
-            cb.addEventListener("change", () => onImplCheckboxChange(implFqn, cb.checked));
-            lbl.appendChild(cb);
-            lbl.appendChild(document.createTextNode(shortNameOfFqn(implFqn)));
-            list.appendChild(lbl);
+        // Sort concretes by short name for stable scanning between renders.
+        const sorted = [...row.concretes].sort((a, b) =>
+            shortNameOfFqn(a).localeCompare(shortNameOfFqn(b)));
+        for (const concreteFqn of sorted) {
+            const opt = document.createElement("option");
+            opt.value = concreteFqn;
+            opt.textContent = shortNameOfFqn(concreteFqn);
+            opt.title = concreteFqn;
+            sel.appendChild(opt);
         }
-        wrap.appendChild(list);
+
+        // Initial dropdown value: pending pick > committed selection > All.
+        const pending = pendingSelections.has(row.typeFqn) ? pendingSelections.get(row.typeFqn) : undefined;
+        const applied = selectedTypeByInterface.get(row.typeFqn) || null;
+        const effective = pending !== undefined ? pending : applied;
+        sel.value = effective ?? ALL_IMPLS_VALUE;
+
+        // Yellow ring while a pick differs from the applied selection.
+        if (pending !== undefined && pending !== applied) {
+            sel.classList.add("ii-select-pending");
+        }
+
+        sel.addEventListener("change", () => onImplDropdownChange(row.typeFqn, sel.value));
+        wrap.appendChild(sel);
+
         container.appendChild(wrap);
     }
 
     updateApplyBadge();
 }
 
-const expandedInterfaces = new Set();
+/**
+ * Read the picker snapshot from the graph payload. The server computes this
+ * once per maximal graph (in DispatchServesTypesResolver) and carries it
+ * unchanged through every post-pass prune — so the picker offers the SAME
+ * options regardless of whether the user is currently focused, collapsed,
+ * or hiding impls. Same controller means same options.
+ *
+ * Returned shape: <c>[{ typeFqn, concretes: string[] }]</c>, one entry per
+ * interface or virtual-base type with ≥2 concrete impls in this controller's
+ * call graph. Sorted by short name for stable scanning.
+ */
+function computePickerRows(graph) {
+    if (!graph || !Array.isArray(graph.interfaceImpls)) return [];
+
+    const rows = [];
+    for (const info of graph.interfaceImpls) {
+        const concretes = Array.isArray(info.concretes) ? info.concretes : [];
+        if (concretes.length < 2) continue; // nothing to pick between
+        rows.push({ typeFqn: info.typeFqn, concretes });
+    }
+    rows.sort((a, b) => shortNameOfFqn(a.typeFqn).localeCompare(shortNameOfFqn(b.typeFqn)));
+    return rows;
+}
 
 /**
- * User flipped a checkbox. Compare to the current applied state; if the new
- * state differs, record it as pending. If it matches the applied state (i.e.
- * the user toggled twice and is back where they started), drop the pending
- * entry. Updates the Apply badge but doesn't fetch.
+ * The from-node FQN is "Namespace.Type.Method(args)". Strip the trailing
+ * .Method(args) so the picker keys on the bare type FQN — picking once
+ * for "IUtilityBillingGateway" applies across all of its methods.
  */
-function onImplCheckboxChange(implFqn, visible) {
-    const intendedHidden = !visible;
-    const baseHidden = hiddenImplFqns.has(implFqn);
-    if (intendedHidden === baseHidden) {
-        pendingImplChanges.delete(implFqn);
+function stripMethodFromFqn(methodFqn) {
+    const noArgs = methodFqn.split("(")[0];
+    const lastDot = noArgs.lastIndexOf(".");
+    return lastDot < 0 ? noArgs : noArgs.substring(0, lastDot);
+}
+
+/**
+ * User picked something in a dropdown. Compare to the committed selection;
+ * if different, record as pending. If returned-to-applied, clear the pending
+ * entry. Updates the Apply badge and re-renders the picker (so the yellow
+ * pending ring shows up); doesn't fetch.
+ */
+function onImplDropdownChange(typeFqn, value) {
+    const newPick = value === ALL_IMPLS_VALUE ? null : value;
+    const applied = selectedTypeByInterface.get(typeFqn) || null;
+    if (newPick === applied) {
+        pendingSelections.delete(typeFqn);
     } else {
-        pendingImplChanges.set(implFqn, intendedHidden);
+        pendingSelections.set(typeFqn, newPick);
     }
-    updateApplyBadge();
-    // Re-render only the row colors — cheaper than a full rebuild, and we
-    // don't want to lose checkbox focus or expand state.
     rebuildInterfaceImplList(currentGraph);
 }
 
 function updateApplyBadge() {
     const btn = document.getElementById("iiApplyBtn");
     const badge = document.getElementById("iiPendingBadge");
-    const n = pendingImplChanges.size;
+    const n = pendingSelections.size;
     if (btn) btn.disabled = n === 0;
     if (btn) btn.textContent = n === 0 ? "Apply" : `Apply (${n})`;
     if (badge) {
@@ -580,21 +607,86 @@ function updateApplyBadge() {
     }
 }
 
+/**
+ * Commit pending picks → selectedTypeByInterface and re-render. Multiple
+ * picks across multiple interfaces batch into ONE re-render — no N fetches.
+ */
 function applyImplChanges() {
-    if (pendingImplChanges.size === 0) return;
-    for (const [implFqn, hidden] of pendingImplChanges) {
-        if (hidden) hiddenImplFqns.add(implFqn);
-        else hiddenImplFqns.delete(implFqn);
+    if (pendingSelections.size === 0) return;
+    for (const [typeFqn, pick] of pendingSelections) {
+        if (pick === null) selectedTypeByInterface.delete(typeFqn);
+        else selectedTypeByInterface.set(typeFqn, pick);
     }
-    pendingImplChanges.clear();
+    pendingSelections.clear();
     if (currentRootFqn) renderCurrentView(currentRootFqn);
 }
 
+/**
+ * Drop every selection (committed + pending) and re-render. Equivalent to
+ * "(All impls)" everywhere.
+ */
 function resetImplChanges() {
-    if (hiddenImplFqns.size === 0 && pendingImplChanges.size === 0) return;
-    hiddenImplFqns.clear();
-    pendingImplChanges.clear();
+    if (selectedTypeByInterface.size === 0 && pendingSelections.size === 0) return;
+    selectedTypeByInterface.clear();
+    pendingSelections.clear();
     if (currentRootFqn) renderCurrentView(currentRootFqn);
+}
+
+/**
+ * Translate the user's per-interface picks into a flat hide list of
+ * impl-method FQNs. The server's hideImpls query param expects this shape
+ * (CallGraphHideImpls.Prune drops nodes whose FQN is in the set, plus
+ * orphan subtrees). Computed against <paramref name="graph"/>'s dispatch
+ * edges so the result reflects the current view.
+ *
+ * Per-edge rule: if the edge's from-type has a selection AND the edge's
+ * ServesTypes does NOT contain the picked concrete class, hide the To
+ * node. Edges whose ServesTypes DO contain the picked class survive —
+ * automatically correct for both override (Munis.M serves [Munis]) and
+ * inheritance (RestApi.M serves [RestApi, Munis] when Munis inherits).
+ *
+ * Reachability fallback: if no edge at a given dispatch site serves the
+ * picked class (e.g. user picked something not present in this view), we
+ * skip filtering for that site rather than hiding everything — keeps the
+ * graph sensible when picks are sticky across navigation.
+ */
+function deriveHiddenImpls(graph) {
+    const hidden = new Set();
+    if (!graph || selectedTypeByInterface.size === 0) return hidden;
+
+    const nodesById = new Map(graph.nodes.map(n => [n.id, n]));
+    const edgesByFrom = new Map();
+    for (const e of graph.edges) {
+        if (!e.dispatch) continue;
+        if (!edgesByFrom.has(e.from)) edgesByFrom.set(e.from, []);
+        edgesByFrom.get(e.from).push(e);
+    }
+
+    for (const [, edges] of edgesByFrom) {
+        // Per dispatch site, does the picked type for this from-type appear
+        // in ANY edge's ServesTypes? If not, skip — picked class isn't
+        // reachable from this site, hiding everything would be wrong.
+        let pickReachable = false;
+        let picked = null;
+        for (const e of edges) {
+            const fromNode = nodesById.get(e.from);
+            if (!fromNode) continue;
+            const fromTypeFqn = stripMethodFromFqn(fromNode.fqn);
+            picked = selectedTypeByInterface.get(fromTypeFqn) || null;
+            if (!picked) break;
+            const serves = Array.isArray(e.servesTypes) ? e.servesTypes : [];
+            if (serves.includes(picked)) { pickReachable = true; break; }
+        }
+        if (!picked || !pickReachable) continue;
+
+        for (const e of edges) {
+            const serves = Array.isArray(e.servesTypes) ? e.servesTypes : [];
+            if (serves.includes(picked)) continue;
+            const toFqn = nodesById.get(e.to)?.fqn;
+            if (toFqn) hidden.add(toFqn);
+        }
+    }
+    return hidden;
 }
 
 /**

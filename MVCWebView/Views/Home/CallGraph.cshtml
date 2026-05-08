@@ -35,8 +35,10 @@
     .export-status { font-size: 10px; color: #90a4ae; margin-top: 4px; word-break: break-all; }
     .export-status.success { color: #81c784; }
     .export-status.error { color: #ef5350; }
-    /* Interface-impls picker (in the side panel). Lets the user toggle
-       individual implementations on/off in batch, then commit with Apply. */
+    /* Per-interface impls picker (side panel). One dropdown per interface
+       with multiple in-source impls; user picks one concrete class per
+       interface and commits the batch via Apply. Selections survive
+       navigation, the rendered graph reflects the latest committed picks. */
     .ii-controls { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
     .ii-apply { background: #1565c0; color: white; border: none; padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; }
     .ii-apply:disabled { background: #2a3442; color: #607d8b; cursor: default; }
@@ -44,21 +46,17 @@
     .ii-reset { background: transparent; color: #90a4ae; border: 1px solid #2a3442; padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; }
     .ii-reset:hover { color: #ef5350; border-color: #ef5350; }
     .ii-empty { color: #607d8b; font-style: italic; font-size: 11px; }
-    .ii-iface { margin-bottom: 6px; }
-    .ii-iface-header {
-        cursor: pointer; user-select: none; color: #cfd8dc;
-        padding: 3px 0; word-break: break-all; font-size: 11px;
+    .ii-iface { margin-bottom: 8px; }
+    .ii-iface-header-static {
+        color: #cfd8dc; padding: 3px 0; word-break: break-all; font-size: 11px;
     }
-    .ii-iface-header:hover { color: #4fc3f7; }
-    .ii-caret { display: inline-block; width: 10px; color: #90a4ae; }
-    .ii-impl-list { padding-left: 14px; display: none; }
-    .ii-iface.expanded .ii-impl-list { display: block; }
-    .ii-iface.expanded .ii-caret::before { content: "▾"; }
-    .ii-iface:not(.expanded) .ii-caret::before { content: "▸"; }
-    .ii-impl { display: block; padding: 2px 0; font-size: 11px; word-break: break-all; cursor: pointer; }
-    .ii-impl input[type="checkbox"] { margin-right: 4px; vertical-align: middle; }
-    .ii-impl-pending { color: #ffd54f; }     /* will be hidden after apply */
-    .ii-impl-pending-show { color: #81c784; } /* will be shown after apply */
+    .ii-select {
+        width: 100%; background: #1a1f26; color: #cfd8dc;
+        border: 1px solid #2a3442; border-radius: 3px;
+        padding: 3px 4px; font-size: 11px;
+    }
+    .ii-select:focus { outline: 1px solid #4fc3f7; }
+    .ii-select-pending { border-color: #ffd54f; box-shadow: 0 0 0 1px #ffd54f44; }
     .ii-pending-badge { background: #ffd54f; color: black; border-radius: 8px; padding: 0 6px; font-size: 10px; margin-left: 4px; }
     /* Call-count severity scale. degree 0 stays neutral; N is yellow; each
        additional power gets hotter. The pre containers are already monospace. */
