@@ -38,34 +38,42 @@ public sealed class ControllerGraphBuilder
     }
 
     /// <summary>
-    /// Builds the call graph rooted at <paramref name="rootMethod"/>. The root
-    /// node's NodeKind is left at the default Intermediate; callers should
-    /// PromoteKind it to ControllerAction (or whatever fits their entry point).
+    /// Builds the maximal call graph rooted at <paramref name="rootMethod"/>.
+    /// The root node's NodeKind is left at the default Intermediate; callers
+    /// should PromoteKind it to ControllerAction (or whatever fits their
+    /// entry point).
     /// </summary>
-    /// <param name="expandPastBoundaries">
-    /// When true, the walker keeps descending into a node's body even after
-    /// tagging it as a boundary.
-    /// </param>
-    /// <param name="hiddenImplFqns">
-    /// Optional set of impl FQNs to skip during dispatch fan-out. Used by the
-    /// UI to hide individual implementations of an interface. Matched against
-    /// <c>impl.OriginalDefinition.ToDisplayString()</c>.
-    /// </param>
-    public async Task<CallGraph> BuildAsync(IMethodSymbol rootMethod, bool expandPastBoundaries = false, IReadOnlySet<string>? hiddenImplFqns = null)
+    /// <remarks>
+    /// The walker produces ONE canonical graph per root method — boundaries
+    /// are tagged but not used to terminate the walk. Every view mode the UI
+    /// supports is a post-pass graph→graph transform on this maximal graph:
+    ///   <see cref="CallGraphCollapseBoundaries.Prune"/> — default "stop at
+    ///     boundary" view (drops everything strictly downstream of any
+    ///     boundary node).
+    ///   <see cref="CallGraphHideImpls.Prune"/> — picker-driven impl hiding.
+    ///   <see cref="CallGraphFocus.Prune"/> — click-to-focus narrowing.
+    /// One Roslyn walk per controller, many cheap views derived from it.
+    /// View-time toggles never trigger a rebuild.
+    /// </remarks>
+    public async Task<CallGraph> BuildAsync(IMethodSymbol rootMethod)
     {
         var graph = new CallGraph();
-        await AddIntoAsync(graph, rootMethod, expandPastBoundaries, hiddenImplFqns);
+        await AddIntoAsync(graph, rootMethod);
         return graph;
     }
 
     /// <summary>
-    /// Adds the down-walk of <paramref name="rootMethod"/> into an existing
-    /// graph. Useful when seeding multiple roots into one graph (e.g. all
-    /// controllers in a single project).
+    /// Adds the maximal down-walk of <paramref name="rootMethod"/> into an
+    /// existing graph. Useful when seeding multiple roots into one graph
+    /// (e.g. all controllers in a single project).
     /// </summary>
-    public async Task AddIntoAsync(CallGraph graph, IMethodSymbol rootMethod, bool expandPastBoundaries = false, IReadOnlySet<string>? hiddenImplFqns = null)
+    public async Task AddIntoAsync(CallGraph graph, IMethodSymbol rootMethod)
     {
-        var visited = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+        // Visited set is keyed on MethodKey so cross-compilation duplicates
+        // (e.g. partial classes seen via two different compilations) don't
+        // get walked twice. The graph's node table already merged them; the
+        // walker's own dedup needs the same property.
+        var visited = new HashSet<MethodKey>();
         var rootId = graph.GetOrAddNode(rootMethod);
 
         if (ControllerEndpointDetector.IsControllerAction(rootMethod))
@@ -73,18 +81,18 @@ public sealed class ControllerGraphBuilder
         if (MatchBoundary(rootMethod) is { } rootBoundary)
             graph.TagBoundary(rootId, rootBoundary);
 
-        await WalkAsync(graph, rootMethod, depth: 0, visited, expandPastBoundaries, hiddenImplFqns).ConfigureAwait(false);
+        await WalkAsync(graph, rootMethod, depth: 0, visited).ConfigureAwait(false);
     }
 
-    private async Task WalkAsync(CallGraph graph, IMethodSymbol caller, int depth, HashSet<IMethodSymbol> visited, bool expandPastBoundaries, IReadOnlySet<string>? hiddenImplFqns)
+    private async Task WalkAsync(CallGraph graph, IMethodSymbol caller, int depth, HashSet<MethodKey> visited)
     {
         if (depth >= _maxDepth) return;
-        if (!visited.Add(caller)) return;
+        if (!visited.Add(MethodKey.From(caller))) return;
 
-        // If the caller IS a boundary, normally we stop — the seed/inferrer
-        // defines the terminating boundary on the way down. With
-        // expandPastBoundaries, we walk into the boundary's body too.
-        if (!expandPastBoundaries && MatchBoundary(caller) != null) return;
+        // The walker no longer short-circuits at boundaries. We tag boundary
+        // nodes inline but keep walking past them so the post-pass collapse
+        // transform can decide what's visible. _maxDepth remains the only
+        // hard guardrail to keep recursive code paths from exploding.
 
         foreach (var syntaxRef in caller.DeclaringSyntaxReferences)
         {
@@ -163,15 +171,6 @@ public sealed class ControllerGraphBuilder
                 // can use the same data the fan-out logic uses. Empty list for
                 // non-interface/non-virtual callees.
                 var inSourceImpls = await ResolveInSourceImplsAsync(callee).ConfigureAwait(false);
-                // Apply user-side impl visibility filter. Hidden impls do NOT
-                // appear as nodes, do NOT receive dispatch edges, and are NOT
-                // walked into. The interface still routes to whatever's left.
-                if (hiddenImplFqns != null && hiddenImplFqns.Count > 0 && inSourceImpls.Count > 0)
-                {
-                    inSourceImpls = inSourceImpls
-                        .Where(m => !hiddenImplFqns.Contains(m.OriginalDefinition.ToDisplayString()))
-                        .ToList();
-                }
                 var hasInSourceImpls = inSourceImpls.Count > 0 && inSourceImpls.Count <= _maxFanout;
 
                 // Routing-vs-leaf rule: if the callee is an *interface* method
@@ -252,25 +251,23 @@ public sealed class ControllerGraphBuilder
                         if (implBoundary != null) graph.TagBoundary(implId, implBoundary);
                         graph.AddDispatchEdge(calleeId, implId);
 
-                        // Boundary impl is normally a leaf; expandPastBoundaries
-                        // walks into it the same as a non-boundary impl.
-                        if (implBoundary != null && !expandPastBoundaries) continue;
-                        if (visited.Contains(impl)) continue;
-                        await WalkAsync(graph, impl, depth + 1, visited, expandPastBoundaries, hiddenImplFqns).ConfigureAwait(false);
+                        // Walk into every impl regardless of boundary status —
+                        // the boundary tag stays so the collapse post-pass can
+                        // hide what's downstream when the user wants the
+                        // "stop at boundary" view.
+                        if (visited.Contains(MethodKey.From(impl))) continue;
+                        await WalkAsync(graph, impl, depth + 1, visited).ConfigureAwait(false);
                     }
                 }
 
-                // Boundary leaf: by default the walk stops at the callee body
-                // so the boundary is the visible leaf. Dispatch fan-out above
-                // already added the override/impl nodes; we just don't recurse
-                // into the callee's own body. With expandPastBoundaries we do.
-                if (effectiveBoundary != null && !expandPastBoundaries) continue;
-
                 // Recurse into the callee's own body if it has one in source.
-                if (!HasSourceInSolution(callee)) continue; // BCL / third-party
-                if (visited.Contains(callee)) continue;     // already walked
+                // We always walk past boundaries here too — see the class
+                // remarks. Out-of-source callees (BCL, third-party) still
+                // terminate the walk because there's nothing to read.
+                if (!HasSourceInSolution(callee)) continue;
+                if (visited.Contains(MethodKey.From(callee))) continue;
 
-                await WalkAsync(graph, callee, depth + 1, visited, expandPastBoundaries, hiddenImplFqns).ConfigureAwait(false);
+                await WalkAsync(graph, callee, depth + 1, visited).ConfigureAwait(false);
             }
         }
     }
@@ -301,18 +298,32 @@ public sealed class ControllerGraphBuilder
         //     overrides. (Doesn't cover interface impls on its own.)
         // Then we transitively walk overrides since a subclass override can
         // itself be overridden one level deeper.
-        var all = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+        //
+        // Dedup is keyed on MethodKey so the same logical impl coming back via
+        // two different compilations (e.g. partial classes) doesn't get walked
+        // or returned twice.
+        var seen = new HashSet<MethodKey>();
+        var symbols = new List<IMethodSymbol>();
         var worklist = new Queue<IMethodSymbol>();
+
+        void TryAdd(IMethodSymbol m)
+        {
+            if (seen.Add(MethodKey.From(m)))
+            {
+                symbols.Add(m);
+                worklist.Enqueue(m);
+            }
+        }
 
         foreach (var impl in (await SymbolFinder.FindImplementationsAsync(callee, _solution).ConfigureAwait(false)).OfType<IMethodSymbol>())
         {
-            if (all.Add(impl)) worklist.Enqueue(impl);
+            TryAdd(impl);
         }
         // Also seed from the callee's own overrides — needed for virtuals where
         // FindImplementationsAsync returns nothing.
         foreach (var ov in (await SymbolFinder.FindOverridesAsync(callee, _solution).ConfigureAwait(false)).OfType<IMethodSymbol>())
         {
-            if (all.Add(ov)) worklist.Enqueue(ov);
+            TryAdd(ov);
         }
 
         while (worklist.Count > 0)
@@ -320,11 +331,11 @@ public sealed class ControllerGraphBuilder
             var m = worklist.Dequeue();
             foreach (var ov in (await SymbolFinder.FindOverridesAsync(m, _solution).ConfigureAwait(false)).OfType<IMethodSymbol>())
             {
-                if (all.Add(ov)) worklist.Enqueue(ov);
+                TryAdd(ov);
             }
         }
 
-        return all
+        return symbols
             .Where(m => HasSourceInSolution(m.OriginalDefinition))
             .ToList();
     }

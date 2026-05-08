@@ -35,7 +35,8 @@ public sealed class GraphBuilder
         if (MatchBoundary(gatewayRoot.ReferencedMethod) is { } boundary)
             _graph.TagBoundary(gatewayId, boundary);
 
-        var visited = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+        // Cross-compilation-safe identity: same MethodKey trick the down-walker uses.
+        var visited = new HashSet<MethodKey>();
         await WalkAsync(gatewayRoot, visited).ConfigureAwait(false);
     }
 
@@ -46,9 +47,9 @@ public sealed class GraphBuilder
         return BoundarySeeds.Match(typeFullName, method.Name);
     }
 
-    private async Task WalkAsync(MethodReferenceNode calleeNode, HashSet<IMethodSymbol> visited)
+    private async Task WalkAsync(MethodReferenceNode calleeNode, HashSet<MethodKey> visited)
     {
-        if (!visited.Add(calleeNode.ReferencedMethod)) return;
+        if (!visited.Add(MethodKey.From(calleeNode.ReferencedMethod))) return;
 
         var calleeId = _graph.GetOrAddNode(calleeNode.ReferencedMethod);
 

@@ -296,17 +296,36 @@ public static class GraphvizRenderer
             string color, fontColor;
             string? style = null;
 
+            // For foreach/.Select() etc. the source expression names "what's
+            // being iterated" — surfacing it inline turns "foreach @42" into
+            // "foreach accounts @42", which is the difference between "yes
+            // there's a loop here somewhere" and "yes, we're iterating
+            // accounts." Empty for for(;;) / unrecognized constructs.
+            var src = loop.Source;
             if (loop.Kind == LoopKind.StatementLoop)
             {
-                baseLoopLabel = $"{subkind} @{loopLine}";
-                baseLoopTooltip = $"{baseTooltip}; inside {subkind} at line {loopLine}";
+                // for/foreach/while/do all read naturally as "{kind} {source} @{line}"
+                // since the source is either the enumerable (foreach) or the
+                // condition (for/while/do). When src is empty, fall back to bare kind.
+                baseLoopLabel = src != null
+                    ? $"{subkind} {src} @{loopLine}"
+                    : $"{subkind} @{loopLine}";
+                baseLoopTooltip = src != null
+                    ? $"{baseTooltip}; inside {subkind} ({src}) at line {loopLine}"
+                    : $"{baseTooltip}; inside {subkind} at line {loopLine}";
                 color = "#ef6c00";
                 fontColor = "#ef6c00";
             }
             else if (loop.Kind == LoopKind.EnumerableLoop)
             {
-                baseLoopLabel = $".{subkind}() @{loopLine}";
-                baseLoopTooltip = $"{baseTooltip}; inside .{subkind}() at line {loopLine}";
+                // ".Select(accounts)" reads more naturally than "accounts.Select"
+                // in label form because the short name puts the LINQ verb first.
+                baseLoopLabel = src != null
+                    ? $".{subkind}({src}) @{loopLine}"
+                    : $".{subkind}() @{loopLine}";
+                baseLoopTooltip = src != null
+                    ? $"{baseTooltip}; inside {src}.{subkind}() at line {loopLine}"
+                    : $"{baseTooltip}; inside .{subkind}() at line {loopLine}";
                 color = "#6a1b9a";
                 fontColor = "#6a1b9a";
                 style = "dashed";

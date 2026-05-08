@@ -30,10 +30,14 @@ public sealed class BoundaryInferrer
     private readonly int _maxDepth;
 
     // Per-method memoized decision. Computed lazily on first request.
-    private readonly Dictionary<IMethodSymbol, Decision> _cache = new(SymbolEqualityComparer.Default);
+    // Keyed on MethodKey so cross-compilation duplicates (different IMethodSymbol
+    // instances for the same logical method) share one cache entry instead of
+    // each redoing the full body walk.
+    private readonly Dictionary<MethodKey, Decision> _cache = new();
 
-    // Cycle guard for the recursive taint walk.
-    private readonly HashSet<IMethodSymbol> _inProgress = new(SymbolEqualityComparer.Default);
+    // Cycle guard for the recursive taint walk. Same MethodKey rationale —
+    // a cycle that crosses compilations should still be detected.
+    private readonly HashSet<MethodKey> _inProgress = new();
 
     public BoundaryInferrer(Solution solution, int maxDepth = 10)
     {
@@ -56,26 +60,26 @@ public sealed class BoundaryInferrer
     /// </summary>
     public async Task<Decision> ClassifyAsync(IMethodSymbol method)
     {
-        method = method.OriginalDefinition;
-        if (_cache.TryGetValue(method, out var cached)) return cached;
+        var key = MethodKey.From(method);
+        if (_cache.TryGetValue(key, out var cached)) return cached;
 
         // Cycle: assume "no taint" while in progress; the result will be filled
         // in when the outer frame finishes. False negatives on cycles are fine —
         // the cycle has to bottom out at a non-cyclic body anyway.
-        if (!_inProgress.Add(method)) return new Decision(null, false);
+        if (!_inProgress.Add(key)) return new Decision(null, false);
 
         try
         {
-            var taint = await ComputeTaintAsync(method, depth: 0).ConfigureAwait(false);
+            var taint = await ComputeTaintAsync(key.Symbol, depth: 0).ConfigureAwait(false);
             var decision = taint == null
                 ? new Decision(null, false)
-                : new Decision(taint, IsIntentSurface(method));
-            _cache[method] = decision;
+                : new Decision(taint, IsIntentSurface(key.Symbol));
+            _cache[key] = decision;
             return decision;
         }
         finally
         {
-            _inProgress.Remove(method);
+            _inProgress.Remove(key);
         }
     }
 
@@ -175,14 +179,15 @@ public sealed class BoundaryInferrer
                 }
 
                 // Recurse — using cache and cycle guard.
-                if (_cache.TryGetValue(callee, out var cached))
+                var calleeKey = MethodKey.From(callee);
+                if (_cache.TryGetValue(calleeKey, out var cached))
                 {
                     if (cached.Category != null) seen.Add(cached.Category);
                     continue;
                 }
-                if (_inProgress.Contains(callee)) continue;
+                if (_inProgress.Contains(calleeKey)) continue;
 
-                _inProgress.Add(callee);
+                _inProgress.Add(calleeKey);
                 try
                 {
                     var sub = await ComputeTaintAsync(callee, depth + 1).ConfigureAwait(false);
@@ -190,7 +195,7 @@ public sealed class BoundaryInferrer
                 }
                 finally
                 {
-                    _inProgress.Remove(callee);
+                    _inProgress.Remove(calleeKey);
                 }
             }
         }

@@ -94,6 +94,22 @@ public sealed record LoopInfo
     public int Line { get; init; }
 
     /// <summary>
+    /// What the loop is iterating, when we can name it cheaply from syntax:
+    /// <list type="bullet">
+    ///   <item>foreach: the enumerable expression text (e.g. <c>"accounts"</c>,
+    ///     <c>"customer.Payments"</c>, <c>"db.Orders.Where(o =&gt; o.Open)"</c>).</item>
+    ///   <item>LINQ enumerable: the receiver expression (e.g. <c>"accounts"</c>
+    ///     for <c>accounts.Select(...)</c>).</item>
+    ///   <item>for / while / do: the condition text — not "what we're enumerating"
+    ///     but the closest analog and useful context for the reader.</item>
+    /// </list>
+    /// Truncated to keep edge labels readable. Null when the construct doesn't
+    /// have a meaningful single source expression (e.g. an empty <c>for(;;)</c>).
+    /// </summary>
+    [JsonPropertyName("source")]
+    public string? Source { get; init; }
+
+    /// <summary>
     /// Total count of loops enclosing the call site, between it and the
     /// containing method body. Depth=1 is "inside one loop"; depth=2 is
     /// "inside a nested loop." Used by the side panel to compute call-count

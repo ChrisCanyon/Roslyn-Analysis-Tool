@@ -88,21 +88,41 @@ namespace MVCWebView.Controllers.Api
         }
 
         /// <summary>
-        /// Builds (or pulls from cache) the full graph rooted at <paramref name="fqn"/>,
-        /// then optionally prunes to ancestors+focus+descendants when focus is set.
-        /// Boundary call counts are recomputed against whichever graph the caller
-        /// gets back (full vs pruned) so the polynomials reflect what's visible.
+        /// Pull (or build) the maximal canonical graph for <paramref name="fqn"/>,
+        /// then apply view-time prunes in this order:
+        ///   1. Collapse-at-boundary (skipped when <paramref name="expand"/> is true).
+        ///   2. Hide impls — drops user-deselected impl FQNs and orphan subtrees.
+        ///   3. Focus — narrows to ancestors + focus + descendants of the picked node.
+        ///
+        /// Polynomials get recomputed against the final pruned graph so the
+        /// numbers always reflect what's actually visible. Each prune is a
+        /// pure graph→graph transform; none triggers a Roslyn rebuild.
+        ///
+        /// Order rationale: hide-impls runs AFTER collapse so a user picking
+        /// "show me Munis" doesn't accidentally bring back nodes the collapse
+        /// just removed. Focus runs LAST so it narrows whatever the user has
+        /// shaped via the previous toggles, not the maximal graph.
         /// </summary>
         private async Task<CallGraph?> GetGraphForRequestAsync(string fqn, bool expand, IReadOnlySet<string>? hidden, string? focus)
         {
-            var fullGraph = await BuildGraphAsync(fqn, expand, hidden);
+            var fullGraph = await BuildGraphAsync(fqn);
             if (fullGraph == null) return null;
-            if (string.IsNullOrWhiteSpace(focus)) return fullGraph;
 
-            var pruned = CallGraphFocus.Prune(fullGraph, focus);
-            if (pruned == null) return fullGraph; // focus FQN not in graph; fall back to full
-            pruned.BoundaryCallCounts = BoundaryCallCountAnalyzer.Compute(pruned);
-            return pruned;
+            var view = expand ? fullGraph : CallGraphCollapseBoundaries.Prune(fullGraph);
+            view = CallGraphHideImpls.Prune(view, hidden);
+            if (!string.IsNullOrWhiteSpace(focus))
+            {
+                view = CallGraphFocus.Prune(view, focus) ?? view;
+            }
+
+            // If anything got pruned (object identity differs from the cached
+            // full graph), recompute polynomials against the visible subgraph.
+            // When nothing was pruned we keep the cached BoundaryCallCounts as-is.
+            if (!ReferenceEquals(view, fullGraph))
+            {
+                view.BoundaryCallCounts = BoundaryCallCountAnalyzer.Compute(view);
+            }
+            return view;
         }
 
         /// <summary>
@@ -122,9 +142,15 @@ namespace MVCWebView.Controllers.Api
             return string.Join("|", hidden.OrderBy(s => s, StringComparer.Ordinal));
         }
 
-        private async Task<CallGraph?> BuildGraphAsync(string fqn, bool expandPastBoundaries, IReadOnlySet<string>? hiddenImplFqns)
+        /// <summary>
+        /// Build (or pull from cache) the maximal canonical graph for the given
+        /// root method. Cache key is the FQN alone — the walker no longer takes
+        /// any view-mode parameters, so one Roslyn walk produces the artifact
+        /// for every (expand, hide, focus) view derived from it.
+        /// </summary>
+        private async Task<CallGraph?> BuildGraphAsync(string fqn)
         {
-            var graphKey = $"callgraph.graph::{fqn}::expand={expandPastBoundaries}::hide={HiddenImplsKey(hiddenImplFqns)}";
+            var graphKey = $"callgraph.graph::{fqn}";
             if (_cache.TryGetValue(graphKey, out CallGraph? cached)) return cached;
 
             // Per-key lock so the parallel Graph + GraphJson on the same key
@@ -138,7 +164,7 @@ namespace MVCWebView.Controllers.Api
                 var rootSymbol = await _enumerator.ResolveAnyMethodAsync(fqn);
                 if (rootSymbol == null) return null;
 
-                var graph = await _builder.BuildAsync(rootSymbol, expandPastBoundaries, hiddenImplFqns);
+                var graph = await _builder.BuildAsync(rootSymbol);
                 graph.BoundaryCallCounts = BoundaryCallCountAnalyzer.Compute(graph);
                 _cache.Set(graphKey, graph, GraphCacheLifetime);
                 return graph;

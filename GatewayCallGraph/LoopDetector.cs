@@ -67,19 +67,29 @@ public static class LoopDetector
             switch (current)
             {
                 case ForStatementSyntax @for:
-                    hit = Build(LoopKind.StatementLoop, "for", @for.ForKeyword);
+                    // for(;;) has no meaningful source; otherwise show the
+                    // condition text so the reader sees the termination check.
+                    hit = Build(LoopKind.StatementLoop, "for", @for.ForKeyword,
+                        source: TruncateExpr(@for.Condition?.ToString()));
                     break;
                 case ForEachStatementSyntax @foreach:
-                    hit = Build(LoopKind.StatementLoop, "foreach", @foreach.ForEachKeyword);
+                    // For "foreach (var x in accounts)" we surface "accounts" —
+                    // the enumerable expression. That's almost always what the
+                    // reader wants to see for diagnosing N² hot paths.
+                    hit = Build(LoopKind.StatementLoop, "foreach", @foreach.ForEachKeyword,
+                        source: TruncateExpr(@foreach.Expression.ToString()));
                     break;
                 case ForEachVariableStatementSyntax foreachVar:
-                    hit = Build(LoopKind.StatementLoop, "foreach", foreachVar.ForEachKeyword);
+                    hit = Build(LoopKind.StatementLoop, "foreach", foreachVar.ForEachKeyword,
+                        source: TruncateExpr(foreachVar.Expression.ToString()));
                     break;
                 case WhileStatementSyntax @while:
-                    hit = Build(LoopKind.StatementLoop, "while", @while.WhileKeyword);
+                    hit = Build(LoopKind.StatementLoop, "while", @while.WhileKeyword,
+                        source: TruncateExpr(@while.Condition.ToString()));
                     break;
                 case DoStatementSyntax @do:
-                    hit = Build(LoopKind.StatementLoop, "do", @do.DoKeyword);
+                    hit = Build(LoopKind.StatementLoop, "do", @do.DoKeyword,
+                        source: TruncateExpr(@do.Condition.ToString()));
                     break;
             }
 
@@ -105,7 +115,16 @@ public static class LoopDetector
                             MemberAccessExpressionSyntax m => m.Name.Identifier,
                             _ => invocation.GetFirstToken(),
                         };
-                        hit = Build(LoopKind.EnumerableLoop, methodSymbol.Name, token);
+                        // For "accounts.Select(a => Foo(a))" the receiver
+                        // (accounts) is the enumerable. For static-form LINQ
+                        // ("Enumerable.Select(accounts, a => ...)") the first
+                        // argument plays the same role.
+                        var source = invocation.Expression switch
+                        {
+                            MemberAccessExpressionSyntax m => TruncateExpr(m.Expression.ToString()),
+                            _ => TruncateExpr(invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression.ToString()),
+                        };
+                        hit = Build(LoopKind.EnumerableLoop, methodSymbol.Name, token, source: source);
                     }
                 }
             }
@@ -142,7 +161,7 @@ public static class LoopDetector
         return false;
     }
 
-    private static LoopInfo Build(LoopKind kind, string subkind, Microsoft.CodeAnalysis.SyntaxToken token)
+    private static LoopInfo Build(LoopKind kind, string subkind, Microsoft.CodeAnalysis.SyntaxToken token, string? source = null)
     {
         var location = token.GetLocation();
         var span = location.GetLineSpan();
@@ -152,6 +171,26 @@ public static class LoopDetector
             Subkind = subkind,
             File = span.Path,
             Line = span.StartLinePosition.Line + 1,
+            Source = source,
         };
+    }
+
+    /// <summary>
+    /// Whitespace-normalize and truncate an expression for use in a loop label.
+    /// Newlines and multi-space runs collapse to single spaces. Anything past
+    /// 60 chars gets an ellipsis appended. Returns null for empty input so
+    /// downstream consumers can treat "no source" uniformly.
+    /// </summary>
+    private const int SourceMaxLength = 60;
+    private static string? TruncateExpr(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        // Collapse internal whitespace so multi-line LINQ chains read as one
+        // line in the label. Trim outer whitespace.
+        var collapsed = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+        if (collapsed.Length == 0) return null;
+        return collapsed.Length <= SourceMaxLength
+            ? collapsed
+            : collapsed[..SourceMaxLength] + "…";
     }
 }

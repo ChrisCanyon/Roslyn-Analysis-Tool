@@ -251,7 +251,20 @@ ${categoryLines}`;
         const lines = loopEdges.map(e => {
             const fromNode = byId.get(e.from);
             const toNode = byId.get(e.to);
-            const subkind = e.loop.kind === "enumerable_loop" ? `.${e.loop.subkind}()` : e.loop.subkind;
+            // Render shape:
+            //   foreach accounts                  (foreach + source)
+            //   foreach                           (no source — defensive)
+            //   .Select(accounts)                 (LINQ + source)
+            //   .Select()                         (LINQ + no source)
+            // The source is the enumerable expression for foreach/LINQ, or
+            // the condition text for for/while/do — see LoopDetector.
+            const src = e.loop.source;
+            let subkind;
+            if (e.loop.kind === "enumerable_loop") {
+                subkind = src ? `.${e.loop.subkind}(${src})` : `.${e.loop.subkind}()`;
+            } else {
+                subkind = src ? `${e.loop.subkind} ${src}` : e.loop.subkind;
+            }
             const file = e.loop.file ? shortenPath(e.loop.file) : "?";
             return `${shortName(fromNode)} -> ${shortName(toNode)}\n  ${subkind} @ ${file}:${e.loop.line}`;
         });

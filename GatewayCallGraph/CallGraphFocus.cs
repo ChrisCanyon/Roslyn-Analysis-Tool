@@ -34,7 +34,7 @@ public static class CallGraphFocus
         Walk(reverse, focus.Id, keep); // ancestors
         Walk(forward, focus.Id, keep); // descendants
 
-        return BuildPrunedGraph(source, keep);
+        return CallGraphPruneSupport.BuildPrunedGraph(source, keep);
     }
 
     private static void Walk(Dictionary<int, List<int>> adj, int start, HashSet<int> keep)
@@ -50,46 +50,5 @@ public static class CallGraphFocus
                 if (keep.Add(n)) stack.Push(n);
             }
         }
-    }
-
-    private static CallGraph BuildPrunedGraph(CallGraph source, HashSet<int> keep)
-    {
-        // Re-issue node ids in the pruned graph so consumers don't see gaps.
-        // Edges and BoundaryCallCounts get remapped to the new ids.
-        var pruned = new CallGraph();
-        var oldToNew = new Dictionary<int, int>();
-        foreach (var n in source.Nodes)
-        {
-            if (!keep.Contains(n.Id)) continue;
-            // Re-add via GetOrAddNode using the symbol so the new graph's
-            // internal indexes (Symbol -> id, fqn -> id) stay consistent.
-            var newId = pruned.GetOrAddNode(n.Symbol);
-            oldToNew[n.Id] = newId;
-
-            // Carry over kind + boundary tag.
-            if (n.Kind != NodeKind.Intermediate) pruned.PromoteKind(newId, n.Kind);
-            if (n.BoundaryName != null)
-            {
-                var cat = BoundarySeeds.GetByName(n.BoundaryName);
-                if (cat != null) pruned.TagBoundary(newId, cat);
-            }
-        }
-
-        foreach (var e in source.Edges)
-        {
-            if (!oldToNew.TryGetValue(e.From, out var nf) ||
-                !oldToNew.TryGetValue(e.To, out var nt)) continue;
-            if (e.Dispatch)
-            {
-                pruned.AddDispatchEdge(nf, nt);
-            }
-            else
-            {
-                pruned.AddEdge(nf, nt, e.CallSite, e.Loop, e.Conditional);
-            }
-        }
-
-        // BoundaryCallCounts will be recomputed by the caller after pruning.
-        return pruned;
     }
 }
